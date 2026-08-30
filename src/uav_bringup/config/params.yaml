@@ -1,0 +1,23 @@
+# 集群全局参数（sim_swarm.launch.py 引用）
+
+swarm_coordinator:
+  ros__parameters:
+    num_uavs: 4
+    spawn_spacing: 2.0            # 与 scripts/start_sim_4uav.sh 出生点间隔一致
+    search_area: [10.0, -1.0, 22.0, 7.0]   # 公共系 NED 搜索矩形 [x0,y0,x1,y1]
+    lawnmower_step: 2.0           # 割草机航线间距 m
+    base_alt: 2.0                 # 最低搜索高度 m
+    alt_layer: 0.5                # 相邻机高度层差 m
+    converge_time: 15.0           # 目标上空盘旋时间 s
+    wp_timeout: 30.0
+
+collision_monitor:
+  ros__parameters:
+    num_uavs: 4
+    spawn_spacing: 2.0
+    warn_dist: 1.5
+    crit_dist: 0.8
+    escape_dist: 1.0
+
+# 仿真目标真值（公共系 NED）：放在搜索区域中部
+sim_target: [16.0, 3.0, 0.0]

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>uav_bringup</name>
+  <version>0.1.0</version>
+  <description>系统启动：launch 与参数（仿真集群 / 实机单机）</description>
+  <maintainer email="team@example.com">rm27-uav</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>uav_msgs</exec_depend>
+  <exec_depend>uav_control</exec_depend>
+  <exec_depend>uav_swarm</exec_depend>
+  <exec_depend>uav_perception</exec_depend>
+  <exec_depend>uav_planning</exec_depend>
+  <exec_depend>uav_mission</exec_depend>
+  <exec_depend>uav_localization</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
