@@ -1,0 +1,7 @@
+# 地面站 / 集群调度下发的任务指令
+# mission_type: 0=待机 1=区域搜索 2=定点打击/汇聚 3=返航 4=紧急降落
+uint8 mission_type
+float64[] params        # 任务参数（如搜索区域 [x0,y0,x1,y1] 或目标点 [x,y,z]）
+---
+bool accepted
+string message
