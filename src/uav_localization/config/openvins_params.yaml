@@ -1,0 +1,49 @@
+# OpenVINS 参数（实机 RK3566，按框架文档第 7 节优化）
+# 话题接口与仿真一致：订阅双目 + IMU，发布 /uavN/odom
+# 详细键值以 rpng/open_vins 的 ov_msckf 参数文件为准，此处为项目推荐值
+
+ov_msckf:
+  ros__parameters:
+    # ---- 相机（OV9281 全局快门双目）----
+    max_cameras: 2
+    cam0_topic: "/uav1/camera/left/image_raw"
+    cam1_topic: "/uav1/camera/right/image_raw"
+    cam0_resolution: [640, 400]
+    cam1_resolution: [640, 400]
+    # 标定结果（用 Kalibr 离线标定后替换）
+    cam0_intrinsics: [0.0, 0.0, 0.0, 0.0]      # fx fy cx cy
+    cam0_distortion: [0.0, 0.0, 0.0, 0.0]
+    cam1_intrinsics: [0.0, 0.0, 0.0, 0.0]
+    cam1_distortion: [0.0, 0.0, 0.0, 0.0]
+    T_cam0_imu: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # qx qy qz qw tx ty tz
+    T_cam1_imu: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # ---- IMU（推荐外置 BMI088）----
+    imu_topic: "/uav1/imu/data"
+    imu_rate: 200.0
+    gyroscope_noise_density: 0.00016
+    gyroscope_random_walk: 0.000022
+    accelerometer_noise_density: 0.0028
+    accelerometer_random_walk: 0.00086
+
+    # ---- 前端（框架：特征点 ≤150，输出 20 Hz，关闭回环）----
+    num_pts: 150
+    fast_threshold: 20
+    grid_x: 5
+    grid_y: 5
+    min_px_dist: 10
+    use_klt: true
+    downsample_cameras: false
+
+    # ---- MSCKF 后端 ----
+    max_clone_size: 11
+    max_slam_features: 25
+    max_slam_in_update: 10
+    feat_rep_msckf: "ANCHORED_3D"
+
+    # ---- 输出 ----
+    odom_topic: "/uav1/odom"        # nav_msgs/Odometry，20 Hz
+    path_topic: "/uav1/path"
+
+# 注：仿真中不运行 OpenVINS，定位直接用 PX4 EKF2（GPS 融合），
+# /px4_N/fmu/out/vehicle_local_position 提供等效本地位置。

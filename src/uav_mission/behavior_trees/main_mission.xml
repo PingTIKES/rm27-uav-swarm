@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  RoboMaster 2027 单机任务行为树（BehaviorTree.CPP v4 语法）
+  仿真中等价逻辑由 uav_swarm/swarm_coordinator.py 的集群 FSM 实现；
+  实机用本行为树替换，节点（Action/Condition）在 mission_control.cpp 中注册。
+
+  逻辑：解锁起飞 -> (搜索区域巡逻 | 若发现目标则汇聚跟踪) -> 返航降落
+  安全装饰器：视觉失效 / 电量低时立即触发返航。
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainMission">
+  <BehaviorTree ID="MainMission">
+    <ReactiveSequence>
+      <!-- 安全条件（任一失败即打断任务，进入返航子树）-->
+      <Fallback>
+        <Condition ID="IsBatteryOK"/>
+        <Condition ID="IsVisionOK"/>
+      </Fallback>
+
+      <Sequence>
+        <Action ID="ArmAndTakeoff" altitude="2.0"/>
+        <Fallback>
+          <!-- 发现目标：汇聚跟踪 -->
+          <Sequence>
+            <Condition ID="TargetDetected"/>
+            <Action ID="ConvergeToTarget"/>
+          </Sequence>
+          <!-- 未发现：按航点搜索 -->
+          <Action ID="SearchWaypoints" pattern="lawnmower"/>
+        </Fallback>
+        <Action ID="ReturnToLaunch"/>
+        <Action ID="Land"/>
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+</root>

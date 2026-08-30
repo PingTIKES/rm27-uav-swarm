@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>uav_localization</name>
+  <version>0.1.0</version>
+  <description>OpenVINS 双目 VIO 配置与启动（实机视觉定位）</description>
+  <maintainer email="team@example.com">rm27-uav</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
