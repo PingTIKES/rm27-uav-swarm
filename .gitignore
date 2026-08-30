@@ -1,0 +1,21 @@
+# ROS2 编译产物
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+
+# third_party 克隆的开源项目（由 setup_env.sh 拉取）
+third_party/px4_msgs/
+third_party/px4_ros_com/
+third_party/BehaviorTree.CPP/
+third_party/open_vins/
+src/px4_msgs
+src/px4_ros_com
+src/BehaviorTree.CPP
+src/open_vins
+
+# 模型文件（体积大，单独分发）
+src/uav_perception/models/*.rknn
