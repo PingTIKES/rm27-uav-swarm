@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>uav_perception</name>
+  <version>0.1.0</version>
+  <description>目标检测与深度：仿真目标检测器 + RKNN YOLO 实机节点</description>
+  <maintainer email="team@example.com">rm27-uav</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>px4_msgs</depend>
+  <depend>uav_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

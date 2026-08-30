@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>uav_swarm</name>
+  <version>0.1.0</version>
+  <description>四机集群调度：区域划分、编队搜索、目标汇聚、返航</description>
+  <maintainer email="team@example.com">rm27-uav</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>px4_msgs</depend>
+  <depend>uav_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
