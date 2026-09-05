@@ -20,4 +20,9 @@ collision_monitor:
     escape_dist: 1.0
 
 # 仿真目标真值（公共系 NED）：放在搜索区域中部
-sim_target: [16.0, 3.0, 0.0]
+# 注意：ROS2 参数文件顶层只允许"节点名: ros__parameters:"结构，
+# 不允许 sim_target: [...] 这种游离条目（会导致节点启动即崩溃）
+sim_target_detector:
+  ros__parameters:
+    target_world: [16.0, 3.0, 0.0]
+    detect_range: 8.0

@@ -50,7 +50,7 @@ def _setup(context, *args, **kwargs):
                 executable='sim_target_detector',
                 name='sim_target_detector',
                 namespace=f'uav{i}',
-                parameters=[{
+                parameters=[params_file, {
                     'px4_ns': f'px4_{i}',
                     'spawn_offset': [0.0, (i - 1) * spacing],
                 }],
