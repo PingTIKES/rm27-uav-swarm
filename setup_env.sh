@@ -25,10 +25,14 @@ bash ./Tools/setup/ubuntu.sh --no-nuttx
 DONT_RUN=1 make px4_sitl_default
 
 echo "===== [3/6] 安装 Micro-XRCE-DDS-Agent（PX4 <-> ROS2 桥） ====="
-if [ ! -d "$HOME/Micro-XRCE-DDS-Agent" ]; then
-    git clone --depth 1 --branch v2.4.2 https://github.com/eProsima/Micro-XRCE-DDS-Agent.git "$HOME/Micro-XRCE-DDS-Agent"
+# 注意：必须用 v2.4.3+。v2.4.2 依赖的 Fast-DDS 2.12.x 分支已被官方删除，
+# 会报 "fatal: 无效引用：2.12.x"；v2.4.3 改用 2.14.x，且与 PX4 1.15 兼容。
+if ! command -v MicroXRCEAgent &> /dev/null; then
+    [ -d "$HOME/Micro-XRCE-DDS-Agent" ] || \
+        git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git "$HOME/Micro-XRCE-DDS-Agent"
     cd "$HOME/Micro-XRCE-DDS-Agent"
-    mkdir -p build && cd build
+    git fetch --tags && git checkout v2.4.3
+    rm -rf build && mkdir build && cd build   # 清掉旧缓存，避免沿用失效引用
     cmake ..
     make -j$(nproc)
     sudo make install
