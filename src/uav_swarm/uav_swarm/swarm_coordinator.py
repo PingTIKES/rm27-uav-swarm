@@ -13,15 +13,9 @@
 scripts/start_sim_4uav.sh 的 PX4_GZ_MODEL_POSE 一一对应，注意
 PX4 gz_bridge 的换算 NED=(enu_y, enu_x)）。下发给某机的航点会
 自动减去该机的出生点偏移，转换到其本地系。
-
-静态避障：每个任务航点（搜索/汇聚/返航）都先经 uav_planning.field_map
-的 A* 在赛场占据栅格（真实场地网格离线光栅化）上规划、视线拉直后拆成
-子航点依次下发；落入障碍的航点自动吸附到最近自由点。uav_planning
-不可用时退化为直航（无避障），日志会有警告。
 """
 
 import math
-import os
 
 import rclpy
 from rclpy.node import Node
@@ -86,30 +80,6 @@ class SwarmCoordinator(Node):
         self.uav_alt = {i: -(self.base_alt + (i - 1) * self.alt_layer)
                         for i in range(1, self.n + 1)}
 
-        # ---- 静态避障（A*，占据栅格来自真实场地网格的离线光栅化） ----
-        self.declare_parameter('map_file', '')   # 空 = 用 uav_planning 自带的栅格
-        map_file = str(self.get_parameter('map_file').value)
-        if not map_file:
-            try:
-                from ament_index_python.packages import get_package_share_directory
-                map_file = os.path.join(
-                    get_package_share_directory('uav_planning'),
-                    'maps', 'rmuc_2025_occ.npz')
-            except Exception:
-                map_file = ''
-        try:
-            from uav_planning.field_map import FieldMap
-            self.planner = FieldMap(map_file=map_file)
-            src = map_file if getattr(self.planner, '_from_file', False) \
-                else '内置解析障碍（简化场地）'
-            self.get_logger().info(
-                f'A* 避障已启用，地图来源：{src}'
-                f'（{self.planner.nx}x{self.planner.ny} 栅格）')
-        except Exception as exc:  # noqa: BLE001 - 缺依赖/文件损坏时退化
-            self.planner = None
-            self.get_logger().warn(
-                f'uav_planning 不可用（{exc}），退化为直航（无避障）')
-
         # ---- 接口 ----
         qos = px4_qos()
         self.wp_pubs = {}
@@ -135,10 +105,6 @@ class SwarmCoordinator(Node):
         self.wp_sent_time = {i: None for i in range(1, self.n + 1)}
         self.search_plans = self._build_search_plans()
         self.converge_start = None
-        self.target = None
-        self.converge_assigned = False
-        self.path_queue = {i: [] for i in range(1, self.n + 1)}    # 待飞子航点（公共系）
-        self.cur_sub_wp = {i: None for i in range(1, self.n + 1)}  # 当前子航点
 
         self.timer = self.create_timer(0.2, self._tick)  # 5 Hz 调度
         self.get_logger().info(
@@ -171,7 +137,6 @@ class SwarmCoordinator(Node):
                     self.target = (tx, ty)
                     self.state = 'CONVERGE'
                     self.converge_start = self.get_clock().now()
-                    self.converge_assigned = False
                     break
         return cb
 
@@ -218,46 +183,6 @@ class SwarmCoordinator(Node):
             return True
         return (self.get_clock().now() - t).nanoseconds / 1e9 > self.wp_timeout
 
-    # ---------------- 避障路径（A*） ----------------
-    def _assign_goal(self, i, goal, fallback_direct=False):
-        """为 i 号机规划到 goal（公共系 NED）的路径并装入子航点队列。
-
-        路径 = A*（落入障碍的起终点自动吸附最近自由点）+ 视线拉直。
-        规划失败时：fallback_direct=True 退化为直航并告警，否则返回 False。
-        """
-        goal = (float(goal[0]), float(goal[1]))
-        start = self.uav_pos.get(i)
-        sx, sy = (start[0], start[1]) if start else self.spawn_offset[i]
-        self.cur_sub_wp[i] = None
-        if self.planner is None:
-            self.path_queue[i] = [goal]
-            return True
-        path = self.planner.astar((sx, sy), goal)
-        if not path:
-            if fallback_direct:
-                self.get_logger().warn(
-                    f'UAV{i} 到 ({goal[0]:.1f},{goal[1]:.1f}) 规划失败，退化为直航')
-                self.path_queue[i] = [goal]
-                return True
-            return False
-        path = self.planner.smooth(path)
-        if path and math.hypot(path[0][0] - sx, path[0][1] - sy) < 0.5:
-            path = path[1:]                # 去掉≈当前位置的起点
-        self.path_queue[i] = list(path) if path else [goal]
-        return True
-
-    def _follow_queue(self, i):
-        """沿已规划的子航点推进 i 号机；返回 True 表示路径走完（终点悬停）。"""
-        if self.cur_sub_wp[i] is None:
-            if not self.path_queue[i]:
-                return True
-            self.cur_sub_wp[i] = self.path_queue[i].pop(0)
-            self._pub_waypoint(i, *self.cur_sub_wp[i])
-            return False
-        if self._reached(i, *self.cur_sub_wp[i]) or self._wp_timed_out(i):
-            self.cur_sub_wp[i] = None
-        return False
-
     # ---------------- 主循环 ----------------
     def _tick(self):
         if self.state == 'WAIT_TAKEOFF':
@@ -271,49 +196,44 @@ class SwarmCoordinator(Node):
                 idx = self.wp_index[i]
                 if idx >= len(plan):
                     continue  # 该机搜索完毕，原地悬停
-                if self.cur_sub_wp[i] is None and not self.path_queue[i]:
-                    # 规划到下一个任务航点（A* 绕过场地障碍）
-                    if not self._assign_goal(i, plan[idx]):
-                        self.get_logger().warn(
-                            f'UAV{i} 到搜索航点 {plan[idx]} 规划失败，跳过该点')
-                        self.wp_index[i] += 1
-                        continue
-                if self._follow_queue(i):
-                    self.wp_index[i] += 1  # 到达该任务航点，推进下一个
+                wx, wy = plan[idx]
+                if self.wp_sent_time[i] is None:
+                    self._pub_waypoint(i, wx, wy)
+                elif self._reached(i, wx, wy) or self._wp_timed_out(i):
+                    self.wp_index[i] += 1
+                    if self.wp_index[i] < len(plan):
+                        self._pub_waypoint(i, *plan[self.wp_index[i]])
             # 全部搜完则返航
             if all(self.wp_index[i] >= len(self.search_plans[i])
                    for i in range(1, self.n + 1)):
                 self.get_logger().info('搜索完毕未发现目标，返航')
                 self.state = 'RETURN'
-                for i in range(1, self.n + 1):
-                    self._assign_goal(i, self.spawn_offset[i],
-                                      fallback_direct=True)
 
         elif self.state == 'CONVERGE':
             tx, ty = self.target
-            if not self.converge_assigned:
-                # 各机在目标四周错开 1.5 m，保持各自高度层（A* 绕行障碍）
-                offsets = [(1.5, 0.0), (0.0, 1.5), (-1.5, 0.0), (0.0, -1.5)]
-                for i in range(1, self.n + 1):
-                    dx, dy = offsets[(i - 1) % 4]
-                    self._assign_goal(i, (tx + dx, ty + dy),
-                                      fallback_direct=True)
-                self.converge_assigned = True
+            # 各机在目标四周错开 1.5 m，保持各自高度层
+            offsets = [(1.5, 0.0), (0.0, 1.5), (-1.5, 0.0), (0.0, -1.5)]
             for i in range(1, self.n + 1):
-                self._follow_queue(i)      # 走完即在目标四周悬停
+                dx, dy = offsets[(i - 1) % 4]
+                self._pub_waypoint(i, tx + dx, ty + dy)
             if (self.get_clock().now() - self.converge_start).nanoseconds / 1e9 \
                     > self.converge_time:
                 self.get_logger().info('汇聚完成，集群返航')
                 self.state = 'RETURN'
                 for i in range(1, self.n + 1):
-                    self._assign_goal(i, self.spawn_offset[i],
-                                      fallback_direct=True)
+                    self.wp_sent_time[i] = None
 
         elif self.state == 'RETURN':
             all_home = True
             for i in range(1, self.n + 1):
-                if not self._follow_queue(i):
+                hx, hy = self.spawn_offset[i]  # 出生点上空
+                if self.wp_sent_time[i] is None:
+                    self._pub_waypoint(i, hx, hy)
                     all_home = False
+                elif not self._reached(i, hx, hy):
+                    all_home = False
+                    if self._wp_timed_out(i):
+                        self._pub_waypoint(i, hx, hy)
             if all_home:
                 self.state = 'LAND'
                 self.get_logger().info('全部返航到位，开始降落')
