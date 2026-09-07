@@ -74,6 +74,11 @@ if [ "$WORLD" != "default" ]; then
                 echo "[sim] 警告：场地网格下载失败，Gazebo 中将缺少场地模型"
         fi
         mkdir -p "$PX4_DIR/Tools/simulation/gz/models"
+        # 原版网格法向朝下会被背面剔除（地板不可见），双面化修复是幂等的
+        if [ -s "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" ]; then
+            python3 "$WS_DIR/tools/fix_mesh_normals.py" \
+                "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" || true
+        fi
         cp -ru "$WS_DIR/worlds/models/." "$PX4_DIR/Tools/simulation/gz/models/"
         export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
         echo "[sim] 已安装场地模型 -> $PX4_DIR/Tools/simulation/gz/models/"
