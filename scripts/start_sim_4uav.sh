@@ -39,11 +39,18 @@
 #      = 创建请求仍在 PX4 内部排队重试，继续等即可。
 #
 # 第二次启动 Gazebo 空白/缺场地问题说明：
-#   gz sim 是启动器，其派生的 gz-sim 后端常脱离前台进程组，Ctrl+C
-#   未必能带走。旧 server 残留时第二次启动会新旧两个 server 同时在
-#   线，GUI/PX4 的服务发现随机各连一个（串台），表现为界面空白或
-#   模型不出现。因此本脚本启动前先强清理上一次的全部残留进程
-#   （SIGTERM 等待 10 秒，不死再 SIGKILL），退出时同样强清理。
+#   残留的不仅是 gz-sim 后端（常脱离前台进程组），还有名为
+#   "gz sim -g"（空格）的 ruby 启动器/GUI 进程——Gazebo 官方文档
+#   确认的已知 bug，必须用 gz[- ]sim 同时匹配两种写法才能清干净。
+#   旧进程残留时第二次启动会新旧 server 同时在线，GUI/PX4 的服务
+#   发现随机各连一个（串台），表现为界面空白或模型不出现。
+#   本脚本双保险：
+#   1) 启动前/退出时按 gz[- ]sim|px4_sitl|MicroXRCEAgent 强清理
+#      （SIGTERM 等待 10 秒，不死再 SIGKILL，仍不死则明确告警）；
+#   2) 每轮仿真导出唯一的 GZ_PARTITION（服务发现按分区隔离），
+#      即使有杀不掉的残留，新旧两轮也互相不可见。
+#   注意：手动在别的终端用 gz topic/gz service 调试时，需先
+#   source /tmp/rm27_gz_env.sh（写入本轮分区号）才能看到话题。
 # =============================================================
 set -e
 NUM_UAVS=${1:-4}
@@ -118,6 +125,10 @@ export PX4_GZ_WORLD="$WORLD"
 # 本脚本直接启动 gz-server，需显式给出 PX4 模型库路径
 #（原来由 PX4 启动流程中的 gz_env.sh 设置）
 export GZ_SIM_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
+# 每轮仿真使用唯一的 Gazebo 传输分区（服务发现按分区隔离）：
+# 即使上一次的进程杀不干净，新旧两轮也互相不可见，杜绝串台
+export GZ_PARTITION="${GZ_PARTITION:-rm27_$$}"
+echo "export GZ_PARTITION=$GZ_PARTITION" > /tmp/rm27_gz_env.sh
 
 cd "$PX4_DIR"
 PIDS=()
@@ -157,36 +168,43 @@ start_uav() {
     PIDS+=($!)
 }
 
-# 强清理上一次仿真的全部残留进程：gz-sim 后端常脱离前台进程组，
-# 残留的旧 server 会让第二次启动服务发现串台（Gazebo 空白/缺机）
+# 残留进程匹配模式：gz-sim（连字符后端）+ gz sim（空格 ruby 启动器/GUI，
+# 官方确认的会残留的进程）+ PX4 + Agent
+SIM_PROC_PAT="gz[- ]sim|px4_sitl|MicroXRCEAgent"
+
+# 强清理上一次仿真的全部残留进程
 cleanup_sim() {
     pkill -f "px4_sitl" 2>/dev/null || true
     pkill -f "MicroXRCEAgent" 2>/dev/null || true
-    pkill -f "gz sim" 2>/dev/null || true
-    pkill -f "gz-sim" 2>/dev/null || true
+    pkill -f "gz[- ]sim" 2>/dev/null || true
     for t in $(seq 1 10); do
-        pgrep -f "gz-sim|px4_sitl|MicroXRCEAgent" >/dev/null 2>&1 || return 0
+        pgrep -f "$SIM_PROC_PAT" >/dev/null 2>&1 || return 0
         sleep 1
     done
     echo "[sim] 有残留进程未响应 SIGTERM，强制 SIGKILL..."
     pkill -9 -f "px4_sitl" 2>/dev/null || true
     pkill -9 -f "MicroXRCEAgent" 2>/dev/null || true
-    pkill -9 -f "gz-sim" 2>/dev/null || true
+    pkill -9 -f "gz[- ]sim" 2>/dev/null || true
     sleep 1
+    if pgrep -f "$SIM_PROC_PAT" >/dev/null 2>&1; then
+        echo "[sim] 警告：以下进程 SIGKILL 仍无法杀死（通常卡在显卡驱动/内核态）："
+        pgrep -fa "$SIM_PROC_PAT" || true
+        echo "[sim] 本轮已用独立 GZ_PARTITION 隔离可继续运行；若 Gazebo 仍空白只能重启电脑恢复。"
+    fi
 }
 
 # ---- 0. 清理上一次仿真的残留进程（首次运行无残留，秒过） ----
-if pgrep -f "gz-sim|px4_sitl|MicroXRCEAgent" >/dev/null 2>&1; then
+if pgrep -f "$SIM_PROC_PAT" >/dev/null 2>&1; then
     echo "[sim] 检测到上一次仿真的残留进程，先清理..."
     cleanup_sim
 fi
 
 # ---- 1. 启动 Gazebo（server + GUI），与 PX4 实例完全解耦 ----
-echo "[sim] 启动 gz-server（世界 $WORLD）..."
-gz sim -r -s "$WORLD_SDF" > /tmp/gz_server.log 2>&1 &
+echo "[sim] 启动 gz-server（世界 $WORLD，分区 $GZ_PARTITION）..."
+gz sim -r -s -v 2 "$WORLD_SDF" > /tmp/gz_server.log 2>&1 &
 PIDS+=($!)
 if [ -z "$HEADLESS" ]; then
-    gz sim -g > /tmp/gz_gui.log 2>&1 &
+    gz sim -g -v 2 > /tmp/gz_gui.log 2>&1 &
     PIDS+=($!)
 fi
 
@@ -244,6 +262,16 @@ fi
 echo "[sim] 验证：ros2 topic list | grep px4_"
 echo "[sim] 另开终端执行任务：./scripts/run_swarm.sh"
 echo "[sim] Ctrl+C 或 ./scripts/stop_sim.sh 结束仿真"
+echo "[sim] 别的终端手动用 gz topic/gz service 调试前，先执行：source /tmp/rm27_gz_env.sh"
+echo "[sim] 如遇界面空白/缺机等异常，请把 /tmp/gz_server.log /tmp/gz_gui.log /tmp/px4_instance_*.log 发出来"
 
-trap 'echo; echo "[sim] 正在结束仿真..."; kill "${PIDS[@]}" 2>/dev/null; cleanup_sim; exit 0' INT TERM
+# 清理期间屏蔽再次 Ctrl+C，保证强清理完整执行（被打断会留残余进程）
+on_exit() {
+    trap '' INT TERM
+    echo; echo "[sim] 正在结束仿真..."
+    kill "${PIDS[@]}" 2>/dev/null || true
+    cleanup_sim
+    exit 0
+}
+trap on_exit INT TERM
 wait
