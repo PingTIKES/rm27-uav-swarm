@@ -20,7 +20,7 @@
 
 ## 1. 系统总览与数据流
 
-```
+```javascript
                  Gazebo 仿真世界（RM2025 赛场，4 架虚拟 x500）
                     │  传感器/电机
         ┌───────────┼───────────┬───────────┐
@@ -63,7 +63,7 @@
 每架无人机运行一个实例（命名空间 `/uav1`~`/uav4`），对接飞控命名空间 `/px4_1`~`/px4_4`。
 内部是一个五态状态机：
 
-```
+```javascript
 INIT(发心跳) → ARMING(切Offboard+解锁) → TAKEOFF(升到指定高度) → MISSION(跟踪航点) → LAND → IDLE
 ```
 
@@ -80,7 +80,7 @@ INIT(发心跳) → ARMING(切Offboard+解锁) → TAKEOFF(升到指定高度) �
 
 对应框架文档 4.5 节，整个系统的核心大脑，全局状态机：
 
-```
+```javascript
 WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 ```
 
@@ -188,9 +188,9 @@ colcon build --packages-up-to uav_bringup uav_swarm
 脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
 `worlds/models/rmuc_2025/`（场地网格模型）复制进 PX4 的 models 目录并加入
 `GZ_SIM_RESOURCE_PATH`，设置 `PX4_GZ_WORLD=rmuc_2025_field` → 启动 PX4 实例 1
-（连带 Gazebo 服务器）→ 实例 2/3/4 间隔启动（standalone 接入，首实例后等待 10 秒
-让 gz-server 加载完大场地网格）→ 启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
-启动前有残留进程预检，发现上次仿真没清干净会拒绝启动并提示先跑 stop_sim.sh。
+（连带 Gazebo 服务器）→ **主动探测 `/world/<世界>/create` 服务、确认世界加载
+完成后**再间隔 3 秒启动实例 2/3/4（standalone 接入）→
+启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
 
 Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 全场网格，
 源自 [SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)，
@@ -209,7 +209,7 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > Gazebo ENU 出生点转为各机本地 NED 原点。因此修改出生点时，必须三处同步：
 > `scripts/start_sim_4uav.sh` 的 `SPAWN_POSES`（ENU）、`params.yaml` 的
 > `spawn_offsets`（NED）、launch 文件中的 `SPAWN_OFFSETS_NED`（NED）。
-> >
+> > >
 > 想回到上一版的简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`；
 > 想用 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
 > >
@@ -223,9 +223,9 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > >
 > **注意**：Git 仓库不含场地网格二进制（zip 发行包已内含双面化修复版）。
 > clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
-> `scripts/fetch_field_model.sh`（自动按顺序尝试官方源/jsdelivr/ghproxy 镜像）
-> 下载网格、双面化修复（原版大量面片法向朝下，不修复会被渲染引擎背面剔除、
-> 地板不可见）并用 `tools/rasterize_field.py` 重新生成 A* 用的占据栅格。
+> `scripts/fetch_field_model.sh` 下载网格、双面化修复（原版大量面片法向朝下，
+> 不修复会被渲染引擎背面剔除、地板不可见）并用 `tools/rasterize_field.py`
+> 重新生成 A* 用的占据栅格（需联网 + numpy，可重复执行）。
 
 **验证**（新开终端）：
 
@@ -301,7 +301,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 编译 Agent 报「无效引用：2.12.x」 | v2.4.2 依赖的 Fast-DDS 分支已被官方删除：`git checkout v2.4.3` 后删 `build/` 重新编译（setup_env.sh 已修复） |
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
-| Gazebo 里缺飞机（少于 4 架） | 多为上次仿真残留进程抢占端口/模型名，或实例 2~4 在 gz-server 加载大场地时抢跑导致 spawn 失败：先 `./scripts/stop_sim.sh` 清理再启动（start_sim_4uav.sh 已带残留进程预检和首实例 10 秒等待）；仍缺机时 `grep -i 'spawn\|error' /tmp/px4_instance_*.log` 定位是哪个实例失败 |
+| Gazebo 里缺飞机（少于 4 架） | 多为上次仿真残留进程抢占端口/模型名，或实例 2~4 在 gz-server 加载大场地时抢跑导致 spawn 失败：先 `./scripts/stop_sim.sh` 清理再启动（start_sim_4uav.sh 带残留进程预检，且会主动等待 `/world/<世界>/create` 服务就绪后才启动后续实例，看到“Gazebo 世界已就绪”才往下走）；仍缺机时 `grep -i 'spawn\|error' /tmp/px4_instance_*.log` 定位是哪个实例失败 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
