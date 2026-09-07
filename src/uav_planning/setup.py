@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import setup
 
 package_name = 'uav_planning'
@@ -9,7 +11,10 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/maps', ['maps/rmuc_2025_occ.npz']),
+        # 离线占据栅格由 tools/rasterize_field.py 生成（git 仓库不含二进制），
+        # 用 glob 容忍缺失——缺图时 goal_planner 回退到内置解析障碍，
+        # start_sim_4uav.sh 会自动重建并同步进 install 目录
+        ('share/' + package_name + '/maps', glob('maps/*.npz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
