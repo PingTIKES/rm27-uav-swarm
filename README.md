@@ -300,7 +300,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
 | Gazebo 里飞机数量不够（如只有 1~3 架） | 多为 gz-server 忙时模型创建失败导致 PX4 实例退出：start_sim_4uav.sh 已将 gz-server 与 PX4 解耦——先等世界就绪再错峰启动实例（实例自身无限重试创建请求），看门狗用世界 pose 信息流逐台确认并只重启已退出的实例；仍缺机时看终端 A 的 [sim] 汇总和 /tmp/px4_instance_N.log（勿用"杀掉重启"式脚本：PX4 禁止同名模型，撞名会让实例直接退出） |
-| 第二次启动 Gazebo 空白/没有场地 | 上一次仿真的 gz-sim 后端没退干净（它常脱离前台进程组，Ctrl+C 带不走），新旧 server 同时在线导致服务发现串台：start_sim_4uav.sh 启动前已自动强清理残留进程；手动清理用 `./scripts/stop_sim.sh` 或 `pkill -9 -f gz-sim` |
+| 第二次启动 Gazebo 空白/没有场地 | 上一次仿真没退干净（除 gz-sim 后端外，官方确认 `gz sim -g` 的 ruby 启动器/GUI 也会残留），新旧 server 同时在线导致服务发现串台：start_sim_4uav.sh 启动前按 `gz[- ]sim` 统一匹配强清理，且每轮仿真用唯一 GZ_PARTITION 隔离（残留杀不净也不串台）；手动清理用 `./scripts/stop_sim.sh` 或 `pkill -9 -f "gz[- ]sim"`；仍空白请带上 /tmp/gz_server.log 与 /tmp/gz_gui.log 排查 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
