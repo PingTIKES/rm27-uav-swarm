@@ -1,8 +1,13 @@
 """
 RM2025 赛场占据栅格地图 + A* 路径搜索（公共系 NED 坐标）。
 
-障碍物清单与 worlds/rm2025_field.sdf 一一对应（注意 ENU→NED 换算：
-x_ned = y_enu, y_ned = x_enu，尺寸同步交换）。围挡通过地图边界体现。
+地图来源（二选一）：
+  1. map_file 指向离线栅格（.npz）——由 RMUC2025 真实场地网格
+     （worlds/models/rmuc_2025，源自 SMBU-PolarBear rmu_gazebo_simulator）
+     离线光栅化生成：取 z∈[0.35, 3.8] m 的所有三角面采样投影到 NED 平面，
+     并按机体半径膨胀 0.5 m。对应 worlds/rmuc_2025_field.sdf（默认场地）。
+  2. 内置解析障碍清单 OBSTACLES——与简化场地 worlds/rm2025_field.sdf
+     一一对应（map_file 为空或文件缺失时的回退）。
 
 约定：
   - 坐标均为公共系 NED（x 北 / y 东），单位 m
@@ -16,6 +21,7 @@ D430i 深度点云局部建图（或裁判系统给的静态场地 + 局部动�
 
 import heapq
 import math
+import os
 
 
 class FieldMap:
@@ -36,12 +42,39 @@ class FieldMap:
         (4.6, 5.0, 0.8, 2.4),       # 二级台阶 2
     ]
 
-    def __init__(self, resolution=0.25, inflate=0.5):
+    def __init__(self, resolution=0.25, inflate=0.5, map_file=''):
         self.res = float(resolution)
         self.inflate = float(inflate)
-        self.nx = int((self.X_MAX - self.X_MIN) / self.res)
-        self.ny = int((self.Y_MAX - self.Y_MIN) / self.res)
-        self.grid = self._build()
+        self._from_file = False
+        if map_file and os.path.isfile(map_file):
+            try:
+                self._load_npz(map_file)
+                self._from_file = True
+            except Exception as exc:  # noqa: BLE001 - 缺 numpy / 文件损坏时回退
+                print(f'[FieldMap] 加载 {map_file} 失败（{exc}），回退到内置解析障碍')
+        if not self._from_file:
+            self.nx = int((self.X_MAX - self.X_MIN) / self.res)
+            self.ny = int((self.Y_MAX - self.Y_MIN) / self.res)
+            self.grid = self._build()
+
+    # ---------------- 离线栅格（真实场地网格光栅化产物） ----------------
+    def _load_npz(self, path):
+        """加载 .npz 离线栅格：occ(nx,ny) uint8（已含膨胀）、x0/y0/res。
+
+        栅格在 NED 系下生成：x_ned = mesh_x，y_ned = -mesh_y，
+        与 worlds/rmuc_2025_field.sdf 中场地 yaw=+90° 的放置一致。
+        """
+        import numpy as np
+        data = np.load(path)
+        occ = data['occ']
+        self.X_MIN = float(data['x0'])
+        self.Y_MIN = float(data['y0'])
+        self.res = float(data['res'])
+        self.nx, self.ny = int(occ.shape[0]), int(occ.shape[1])
+        self.X_MAX = self.X_MIN + self.nx * self.res
+        self.Y_MAX = self.Y_MIN + self.ny * self.res
+        self.grid = [[1 if occ[i, j] else 0 for j in range(self.ny)]
+                     for i in range(self.nx)]
 
     # ---------------- 建图 ----------------
     def _build(self):

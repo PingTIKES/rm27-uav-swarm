@@ -21,6 +21,7 @@ scripts/start_sim_4uav.sh 一致。
 """
 
 import math
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -57,6 +58,7 @@ class GoalPlanner(Node):
         self.declare_parameter('cruise_alt', 2.0)           # 巡航高度 m
         self.declare_parameter('map_resolution', 0.25)
         self.declare_parameter('inflate', 0.5)              # 障碍膨胀 m
+        self.declare_parameter('map_file', '')              # 离线栅格 .npz（默认真实场地）
         self.declare_parameter('reach_tol', 0.45)           # 航点到达判定 m
 
         self.uav_id = int(self.get_parameter('uav_id').value)
@@ -68,9 +70,23 @@ class GoalPlanner(Node):
         self.alt = float(self.get_parameter('cruise_alt').value)
         self.reach_tol = float(self.get_parameter('reach_tol').value)
 
+        map_file = str(self.get_parameter('map_file').value)
+        if not map_file:
+            # 默认：包内离线栅格（RMUC2025 真实场地光栅化产物）
+            try:
+                from ament_index_python.packages import get_package_share_directory
+                map_file = os.path.join(
+                    get_package_share_directory('uav_planning'),
+                    'maps', 'rmuc_2025_occ.npz')
+            except Exception:  # noqa: BLE001
+                map_file = ''
         self.fmap = FieldMap(
             resolution=float(self.get_parameter('map_resolution').value),
-            inflate=float(self.get_parameter('inflate').value))
+            inflate=float(self.get_parameter('inflate').value),
+            map_file=map_file)
+        self.get_logger().info(
+            f'地图来源: {"离线栅格 " + map_file if self.fmap._from_file else "内置解析障碍"} '
+            f'({self.fmap.nx}x{self.fmap.ny} @ {self.fmap.res} m)')
 
         # ---- 状态 ----
         self.pos = None            # 公共系 (x, y, z_ned)
@@ -94,7 +110,9 @@ class GoalPlanner(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST, depth=1)
-        self.map_pub = self.create_publisher(OccupancyGrid, '/field_map', map_qos)
+        self.map_pub = self.create_publisher(
+            __import__('nav_msgs.msg', fromlist=['OccupancyGrid']).OccupancyGrid,
+            '/field_map', map_qos)
         self._publish_field_map()
 
         self.create_timer(0.2, self._tick)  # 5 Hz
