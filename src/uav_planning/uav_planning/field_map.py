@@ -208,18 +208,23 @@ class FieldMap:
 
     # ---------------- 导出 ----------------
     def to_occupancy_grid(self):
-        """返回 nav_msgs/OccupancyGrid（调用方填 header）。"""
+        """返回 nav_msgs/OccupancyGrid（调用方填 header）。
+
+        注意数据约定：行优先存储、行 = y（data[y*width + x]），
+        因此 width=nx、height=ny，外层循环必须是 y——写反会导致
+        RViz 里地图转置 90°，与 TF/标记坐标对不上。
+        """
         from nav_msgs.msg import OccupancyGrid
         grid = OccupancyGrid()
         grid.info.resolution = self.res
-        grid.info.width = self.ny          # 栅格列 = NED y
-        grid.info.height = self.nx         # 栅格行 = NED x
+        grid.info.width = self.nx          # 列数 = NED x 方向栅格数
+        grid.info.height = self.ny         # 行数 = NED y 方向栅格数
         grid.info.origin.position.x = self.X_MIN
         grid.info.origin.position.y = self.Y_MIN
         grid.info.origin.orientation.w = 1.0
         data = []
-        for i in range(self.nx):
-            for j in range(self.ny):
+        for j in range(self.ny):           # 行（y）外层
+            for i in range(self.nx):       # 列（x）内层
                 data.append(100 if self.grid[i][j] else 0)
         grid.data = data
         return grid
