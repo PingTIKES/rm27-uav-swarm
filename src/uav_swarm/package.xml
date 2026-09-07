@@ -11,9 +11,6 @@
   <depend>geometry_msgs</depend>
   <depend>px4_msgs</depend>
   <depend>uav_msgs</depend>
-  <!-- 集群调度的每个任务航点都经 uav_planning 的 A* 绕障 -->
-  <exec_depend>uav_planning</exec_depend>
-  <exec_depend>ament_index_python</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

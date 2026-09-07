@@ -13,10 +13,7 @@
 坐标关系与 worlds/rmuc_2025_field.sdf 中场地 yaw=+90° 一致：
     x_ned = mesh_x，y_ned = -mesh_y
 
-依赖：仅 numpy。膨胀固定用纯 numpy 3x3 迭代——不依赖 scipy
-（很多机器上 scipy 与 NumPy 2.x 不兼容会报 _ARRAY_API 错误），
-且保证任何机器生成的地图完全一致（比 scipy 的十字结构元略保守，
-向 8 连通方向膨胀，对避障更安全）。
+依赖：numpy（膨胀用 scipy；缺 scipy 时退化为纯 numpy 3x3 迭代）。
 """
 
 import os
@@ -45,15 +42,19 @@ def load_stl(path):
 
 
 def dilate(grid, cells):
-    """纯 numpy 膨胀：3x3 结构元（8 连通）× cells 轮。"""
-    g = grid.copy()
-    for _ in range(cells):
-        p = np.pad(g, 1)
-        g = np.zeros_like(g)
-        for di in range(3):
-            for dj in range(3):
-                g |= p[di:di + g.shape[0], dj:dj + g.shape[1]]
-    return g
+    """优先 scipy；缺 scipy 时用纯 numpy 迭代（3x3 结构元 × cells 轮）。"""
+    try:
+        from scipy import ndimage
+        return ndimage.binary_dilation(grid, iterations=cells)
+    except ImportError:
+        g = grid.copy()
+        for _ in range(cells):
+            p = np.pad(g, 1)
+            g = np.zeros_like(g)
+            for di in range(3):
+                for dj in range(3):
+                    g |= p[di:di + g.shape[0], dj:dj + g.shape[1]]
+        return g
 
 
 def main():
