@@ -15,6 +15,7 @@
 """
 
 import os
+import shutil
 import struct
 import sys
 
@@ -63,7 +64,14 @@ def main():
 
     if os.path.abspath(src) == os.path.abspath(dst) \
             and not os.path.exists(src + '.single_sided.bak'):
-        os.rename(src, src + '.single_sided.bak')
+        try:
+            os.rename(src, src + '.single_sided.bak')
+        except OSError:
+            try:
+                shutil.copy2(src, src + '.single_sided.bak')
+            except OSError:
+                print('警告：原文件备份失败（不影响双面化；'
+                      '原版可用 fetch_field_model.sh 随时重新下载）')
     with open(dst, 'wb') as f:
         f.write(header)
         f.write(struct.pack('<I', n * 2))
