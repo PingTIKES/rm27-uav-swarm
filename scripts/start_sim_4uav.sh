@@ -82,6 +82,14 @@ if [ "$WORLD" != "default" ]; then
             python3 "$WS_DIR/tools/rasterize_field.py" || \
                 echo "[sim] 警告：占据栅格重建失败，A* 将回退到内置解析障碍"
         fi
+        # 若工作空间已编译，同步一份进 install 目录（goal_planner 从
+        # share 目录读图；不重新 colcon build 也能生效）
+        INSTALL_MAPS="$WS_DIR/install/uav_planning/share/uav_planning/maps"
+        if [ -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ] \
+            && [ -d "$WS_DIR/install/uav_planning/share/uav_planning" ]; then
+            mkdir -p "$INSTALL_MAPS"
+            cp -u "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" "$INSTALL_MAPS/" 2>/dev/null || true
+        fi
     fi
 fi
 export PX4_GZ_WORLD="$WORLD"
