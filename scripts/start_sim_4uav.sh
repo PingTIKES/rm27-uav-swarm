@@ -21,7 +21,7 @@
 #
 # 自定义世界加载原理：PX4 启动脚本固定从
 #   $PX4_DIR/Tools/simulation/gz/worlds/<PX4_GZ_WORLD>.sdf 读取世界，
-#   因此本脚本会先把 worlds/rm2025_field.sdf 复制到该目录。
+#   因此本脚本会先把 worlds/$WORLD.sdf 复制到该目录。
 # =============================================================
 set -e
 NUM_UAVS=${1:-4}
