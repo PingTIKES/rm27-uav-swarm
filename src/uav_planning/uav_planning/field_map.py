@@ -187,7 +187,12 @@ class FieldMap:
         return True
 
     def smooth(self, path):
-        """贪心捷径：能直走就删掉中间点；再把过密的点稀疏化。"""
+        """贪心捷径：能直走就删掉中间点。
+
+        警告：不要在此之后做任何"按距离稀疏化"的二次删点——捷径只保证
+        相邻保留点之间直线无碰撞，再删点会产生未经检查的新段，
+        可能斜穿障碍角（真机即撞墙）。
+        """
         if not path or len(path) < 3:
             return path
         out = [path[0]]
@@ -198,13 +203,7 @@ class FieldMap:
                 j -= 1
             out.append(path[j])
             i = j
-        # 稀疏化：相邻点至少 0.8 m（终点除外）
-        sparse = [out[0]]
-        for p in out[1:]:
-            if math.hypot(p[0] - sparse[-1][0], p[1] - sparse[-1][1]) >= 0.8 \
-                    or p is out[-1]:
-                sparse.append(p)
-        return sparse
+        return out
 
     # ---------------- 导出 ----------------
     def to_occupancy_grid(self):
