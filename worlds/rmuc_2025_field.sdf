@@ -176,8 +176,9 @@
 
     <!-- ================= RMUC2025 全场（真实网格） =================
          yaw=+90°：网格 x 轴（长轴 29.16 m）转到 ENU +y，即 NED 北向。
-         模型文件位于 worlds/models/rmuc_2025/，启动脚本会把它复制到
-         PX4 的 gz models 目录并加入 GZ_SIM_RESOURCE_PATH。 -->
+         模型文件位于 worlds/models/rmuc_2025/，启动脚本把 worlds/models
+         置于 GZ_SIM_RESOURCE_PATH 最前，model://rmuc_2025 无论什么情况
+         都解析到工作空间这份（meshes/rmuc_2025.stl），不做任何复制。 -->
     <model name="rmuc_2025">
       <include>
         <uri>model://rmuc_2025</uri>

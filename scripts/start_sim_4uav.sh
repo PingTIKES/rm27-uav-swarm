@@ -92,8 +92,10 @@ if [ "$WORLD" != "default" ]; then
     cp -u "$WORLD_SRC" "$WORLD_DST"
     echo "[sim] 已安装世界文件 -> $WORLD_DST"
 
-    # 同步安装世界引用的网格模型（model://rmuc_2025 等）：
-    # 复制进 PX4 的 gz models 目录，并显式加入 GZ_SIM_RESOURCE_PATH
+    # 场地模型（model://rmuc_2025 等）直接由工作空间目录提供：
+    # GZ_SIM_RESOURCE_PATH 把它放在最前，Gazebo 无论什么情况都加载
+    # worlds/models/rmuc_2025/meshes/rmuc_2025.stl 这一份；
+    # 不再复制进 PX4 models 目录（副本会过期，曾导致换网格后仍显示旧版）
     if [ -d "$WS_DIR/worlds/models" ]; then
         # git clone 的工作空间不含 STL 二进制（zip 发行包已内含），缺失时自动拉取
         if [ ! -s "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" ] \
@@ -102,21 +104,17 @@ if [ "$WORLD" != "default" ]; then
             bash "$WS_DIR/scripts/fetch_field_model.sh" || \
                 echo "[sim] 警告：场地网格下载失败，Gazebo 中将缺少场地模型"
         fi
-        mkdir -p "$PX4_DIR/Tools/simulation/gz/models"
-        cp -ru "$WS_DIR/worlds/models/." "$PX4_DIR/Tools/simulation/gz/models/"
-        # 场地网格按内容强制同步：cp -u 只比 mtime，手动替换进去的旧
-        # 时间戳文件会被静默跳过，导致 Gazebo 仍加载旧的带墙网格
-        STL_SRC="$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
-        STL_DST="$PX4_DIR/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl"
-        if [ -f "$STL_SRC" ] && ! cmp -s "$STL_SRC" "$STL_DST"; then
-            cp -f "$STL_SRC" "$STL_DST"
-            echo "[sim] 检测到场地网格内容有变化，已强制同步 -> $STL_DST"
-        fi
-        if [ -f "$STL_SRC" ]; then
-            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d）"
+        # 删除旧版本脚本复制进 PX4 目录的场地模型副本，杜绝误读旧网格
+        if [ -d "$PX4_DIR/Tools/simulation/gz/models/rmuc_2025" ]; then
+            rm -rf "$PX4_DIR/Tools/simulation/gz/models/rmuc_2025"
+            echo "[sim] 已删除 PX4 models 目录下的旧场地模型副本（统一使用工作空间副本）"
         fi
         export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:${GZ_SIM_RESOURCE_PATH:-}"
-        echo "[sim] 已安装场地模型 -> $PX4_DIR/Tools/simulation/gz/models/"
+        STL_SRC="$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
+        if [ -f "$STL_SRC" ]; then
+            echo "[sim] 场地模型直接加载：$STL_SRC"
+            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d）"
+        fi
         # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用）
         if [ ! -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ]; then
             python3 "$WS_DIR/tools/rasterize_field.py" || \
@@ -133,9 +131,14 @@ if [ "$WORLD" != "default" ]; then
     fi
 fi
 export PX4_GZ_WORLD="$WORLD"
-# 本脚本直接启动 gz-server，需显式给出 PX4 模型库路径
-#（原来由 PX4 启动流程中的 gz_env.sh 设置）
-export GZ_SIM_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
+# PX4 自带模型库（x500 等）放在路径最后：工作空间 worlds/models 优先，
+# 保证无论什么情况场地模型都加载工作空间里的那一份；
+# 本脚本直接启动 gz-server，需显式给出该路径（原来由 gz_env.sh 设置）
+if [ -n "${GZ_SIM_RESOURCE_PATH:-}" ]; then
+    export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$PX4_DIR/Tools/simulation/gz/models"
+else
+    export GZ_SIM_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gz/models"
+fi
 # 每轮仿真使用唯一的 Gazebo 传输分区（服务发现按分区隔离）：
 # 即使上一次的进程杀不干净，新旧两轮也互相不可见，杜绝串台
 export GZ_PARTITION="${GZ_PARTITION:-rm27_$$}"
