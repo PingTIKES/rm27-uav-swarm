@@ -1,0 +1,507 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- =====================================================================
+  RM2025 赛场简化世界（适配 PX4 v1.15.4 + gz-garden 四机集群仿真）
+
+  布局参考 RoboMaster 2025 超级对抗赛赛场（约 28 m x 15 m）：
+    - 场地长轴沿 NED 北向（即 Gazebo ENU 的 +y 轴），南端红方基地、北端蓝方基地
+    - 中央资源岛 + 能量机关架（简化）、两侧前哨站、两端高地、二级台阶
+    - 四周 4 m 高围挡（防止无人机飞出场地）
+    - 蓝方基地前为"基地启动区"（浅蓝色地贴），四台无人机出生在其四周的
+      停机坪（黄色圆垫），与 scripts/start_sim_4uav.sh 的出生点一一对应
+
+  坐标提醒：Gazebo 世界为 ENU；PX4 gz_bridge 按 NED=(enu_y, enu_x, -enu_z)
+  转换。本文件中所有模型坐标均为 ENU，README 与代码中的"公共系 NED"
+  坐标换算关系：x_ned = y_enu, y_ned = x_enu。
+
+  场地元素均用简单几何体近似（遵循 RMOSS "Collision 简洁原则"），
+  如需 1:1 精细模型，可将组委会官方场地模型经 Blender 减面后导出
+  .dae/.stl 替换相应 model 块（参考 bbs.robomaster.com/article/714072）。
+  ====================================================================== -->
+<sdf version="1.9">
+  <world name="rm2025_field">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system"/>
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
+    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system"/>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
+    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system"/>
+    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system"/>
+    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system"/>
+    <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <gui fullscreen="false">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <!-- 默认相机：从蓝方基地上空俯瞰全场 -->
+        <camera_pose>3 22 14 0 0.55 -1.5707</camera_pose>
+        <camera_clip>
+          <near>0.25</near>
+          <far>25000</far>
+        </camera_clip>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property key="state" type="string">floating</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="MarkerManager" name="Marker manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="SelectEntities" name="Select Entities">
+        <anchors target="Select entities">
+          <line own="right" target="right"/>
+          <line own="top" target="top"/>
+        </anchors>
+        <property key="resizable" type="bool">false</property>
+        <property key="width" type="double">5</property>
+        <property key="height" type="double">5</property>
+        <property key="state" type="string">floating</property>
+        <property key="showTitleBar" type="bool">false</property>
+      </plugin>
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="Spawn" name="Spawn Entities">
+        <gz-gui>
+          <anchors target="Select entities">
+            <line own="right" target="right"/>
+            <line own="top" target="top"/>
+          </anchors>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin name="World control" filename="WorldControl">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="bool" key="resizable">0</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">121</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>1</play_pause>
+        <step>1</step>
+        <start_paused>1</start_paused>
+      </plugin>
+      <plugin name="World stats" filename="WorldStats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="bool" key="resizable">0</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>1</sim_time>
+        <real_time>1</real_time>
+        <real_time_factor>1</real_time_factor>
+        <iterations>1</iterations>
+      </plugin>
+      <plugin name="Entity tree" filename="EntityTree"/>
+    </gui>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg> 8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ================= 地面 ================= -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+            <specular>0.5 0.5 0.5 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1</iyy><iyz>0</iyz><izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <!-- 赛场地板 15.6 x 28.6 m（深蓝灰） -->
+    <model name="field_floor">
+      <static>true</static>
+      <pose>0 0 0.01 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>15.6 28.6 0.02</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>15.6 28.6 0.02</size></box></geometry>
+          <material>
+            <ambient>0.13 0.15 0.19 1</ambient>
+            <diffuse>0.16 0.18 0.22 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 四周围挡（4 m 高） ================= -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 14.2 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>15.6 0.2 4.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>15.6 0.2 4.0</size></box></geometry>
+          <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -14.2 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>15.6 0.2 4.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>15.6 0.2 4.0</size></box></geometry>
+          <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static>
+      <pose>7.6 0 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 28.6 4.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 28.6 4.0</size></box></geometry>
+          <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-7.6 0 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 28.6 4.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 28.6 4.0</size></box></geometry>
+          <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 双方基地 ================= -->
+    <!-- 蓝方基地（我方，北端 NED x=+13） -->
+    <model name="blue_base">
+      <static>true</static>
+      <pose>0 13.0 0.7 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.2 1.8 1.4</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.2 1.8 1.4</size></box></geometry>
+          <material><ambient>0.05 0.18 0.7 1</ambient><diffuse>0.08 0.25 0.85 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- 红方基地（敌方，南端 NED x=-13） -->
+    <model name="red_base">
+      <static>true</static>
+      <pose>0 -13.0 0.7 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.2 1.8 1.4</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.2 1.8 1.4</size></box></geometry>
+          <material><ambient>0.7 0.08 0.08 1</ambient><diffuse>0.85 0.12 0.12 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 基地启动区地贴 ================= -->
+    <!-- 蓝方启动区：NED 中心 (10.5, 0)，2.4(x 长) x 2.2(y 宽)，无人机出生在其四周 -->
+    <model name="blue_startup_zone">
+      <static>true</static>
+      <pose>0 10.5 0.032 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><box><size>2.2 2.4 0.004</size></box></geometry>
+          <material><ambient>0.25 0.5 0.95 1</ambient><diffuse>0.3 0.6 1.0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="red_startup_zone">
+      <static>true</static>
+      <pose>0 -10.5 0.032 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><box><size>2.2 2.4 0.004</size></box></geometry>
+          <material><ambient>0.95 0.4 0.4 1</ambient><diffuse>1.0 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 停机坪（4 个出生点，黄色圆垫） ================= -->
+    <!-- pad_i 对应第 i 台无人机出生点（ENU 坐标，与 start_sim_4uav.sh 一致） -->
+    <model name="pad_1">
+      <static>true</static>
+      <pose>1.3 9.4 0.035 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_2">
+      <static>true</static>
+      <pose>-1.3 9.4 0.035 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_3">
+      <static>true</static>
+      <pose>1.3 11.6 0.035 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_4">
+      <static>true</static>
+      <pose>-1.3 11.6 0.035 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 场地障碍（简化） ================= -->
+    <!-- 前哨站（中场两侧，1.2 m 高） -->
+    <model name="outpost_east">
+      <static>true</static>
+      <pose>4.8 0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 1.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 1.0 1.2</size></box></geometry>
+          <material><ambient>0.75 0.45 0.08 1</ambient><diffuse>0.9 0.55 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="outpost_west">
+      <static>true</static>
+      <pose>-4.8 0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 1.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 1.0 1.2</size></box></geometry>
+          <material><ambient>0.75 0.45 0.08 1</ambient><diffuse>0.9 0.55 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 中央资源岛（0.6 m 高台） -->
+    <model name="center_island">
+      <static>true</static>
+      <pose>0 0 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>3.2 3.2 0.6</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>3.2 3.2 0.6</size></box></geometry>
+          <material><ambient>0.28 0.33 0.28 1</ambient><diffuse>0.35 0.4 0.35 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- 能量机关架（简化立柱，立于资源岛上，顶面 1.6 m，低于最低飞行层 2.0 m） -->
+    <model name="rune_tower">
+      <static>true</static>
+      <pose>0 0 1.1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.8 0.8 1.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.8 0.8 1.0</size></box></geometry>
+          <material><ambient>0.2 0.2 0.22 1</ambient><diffuse>0.25 0.25 0.28 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 高地平台（0.5 m 高，蓝方东侧 / 红方西侧） -->
+    <model name="highland_blue">
+      <static>true</static>
+      <pose>5.0 6.5 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 3.0 0.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 3.0 0.5</size></box></geometry>
+          <material><ambient>0.3 0.32 0.36 1</ambient><diffuse>0.38 0.4 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="highland_red">
+      <static>true</static>
+      <pose>-5.0 -6.5 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 3.0 0.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 3.0 0.5</size></box></geometry>
+          <material><ambient>0.3 0.32 0.36 1</ambient><diffuse>0.38 0.4 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 二级台阶（2025 赛季新增地形，两级各 0.2 m，靠蓝方高地） -->
+    <model name="steps_blue_1">
+      <static>true</static>
+      <pose>5.0 4.2 0.1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 0.8 0.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 0.8 0.2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="steps_blue_2">
+      <static>true</static>
+      <pose>5.0 4.6 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 0.8 0.6</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 0.8 0.6</size></box></geometry>
+          <material><ambient>0.45 0.45 0.45 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 搜索目标标记（亮绿色立柱，NED (-9, 2, 0)，与 params.yaml 的
+         target_world 对应；无人机汇聚时可在画面中直观看到） -->
+    <model name="target_marker">
+      <static>true</static>
+      <pose>2.0 -9.0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry></collision>
+        <visual name="visual"><geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.1 0.8 0.2 1</ambient>
+            <diffuse>0.15 0.95 0.25 1</diffuse>
+            <emissive>0.1 0.6 0.15 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

@@ -1,12 +1,19 @@
 # 集群全局参数（sim_swarm.launch.py 引用）
+# 坐标说明：公共系 NED（x 北 = Gazebo ENU 的 y，y 东 = ENU 的 x）。
+# RM2025 赛场（worlds/rm2025_field.sdf）：场地约 28(南北) x 15(东西) m，
+# 蓝方基地在北端 x=+13，红方基地在南端 x=-13，蓝方基地启动区中心 (10.5, 0)。
 
 swarm_coordinator:
   ros__parameters:
     num_uavs: 4
-    spawn_spacing: 2.0            # 与 scripts/start_sim_4uav.sh 出生点间隔一致
-    search_area: [10.0, -1.0, 22.0, 7.0]   # 公共系 NED 搜索矩形 [x0,y0,x1,y1]
+    spawn_spacing: 2.0            # 兼容参数：spawn_offsets 不足时一字排开的间隔
+    # 四机出生点（公共系 NED，扁平化 [x1,y1, x2,y2, ...]）：
+    # 位于蓝方基地启动区（中心 (10.5,0)，2.4x2.2 m）四周的停机坪上，
+    # 必须与 scripts/start_sim_4uav.sh 的 SPAWN_POSES 对应（NED=(enu_y,enu_x)）
+    spawn_offsets: [9.4, 1.3, 9.4, -1.3, 11.6, 1.3, 11.6, -1.3]
+    search_area: [-10.0, -6.0, 8.0, 6.0]   # 公共系 NED 搜索矩形 [x0,y0,x1,y1]：中场至红方半场
     lawnmower_step: 2.0           # 割草机航线间距 m
-    base_alt: 2.0                 # 最低搜索高度 m
+    base_alt: 2.0                 # 最低搜索高度 m（高于场内最高障碍 1.6 m）
     alt_layer: 0.5                # 相邻机高度层差 m
     converge_time: 15.0           # 目标上空盘旋时间 s
     wp_timeout: 30.0
@@ -15,14 +22,16 @@ collision_monitor:
   ros__parameters:
     num_uavs: 4
     spawn_spacing: 2.0
+    spawn_offsets: [9.4, 1.3, 9.4, -1.3, 11.6, 1.3, 11.6, -1.3]  # 与 swarm_coordinator 一致
     warn_dist: 1.5
     crit_dist: 0.8
     escape_dist: 1.0
 
-# 仿真目标真值（公共系 NED）：放在搜索区域中部
+# 仿真目标真值（公共系 NED）：红方半场 (x=-9, y=2)，
+# 对应世界中绿色立柱模型 target_marker（ENU pose "2.0 -9.0"）
 # 注意：ROS2 参数文件顶层只允许"节点名: ros__parameters:"结构，
-# 不允许 sim_target: [...] 这种游离条目（会导致节点启动即崩溃）
+# 不允许游离条目（会导致节点启动即崩溃）
 sim_target_detector:
   ros__parameters:
-    target_world: [16.0, 3.0, 0.0]
+    target_world: [-9.0, 2.0, 0.0]
     detect_range: 8.0

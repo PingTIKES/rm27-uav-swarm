@@ -1,18 +1,45 @@
 #!/usr/bin/env bash
 # =============================================================
-# 启动 4 机 PX4 SITL + Gazebo + MicroXRCEAgent
+# 启动 4 机 PX4 SITL + Gazebo(RM2025 赛场) + MicroXRCEAgent
+#
 # 依据 PX4 官方多机仿真方式：
 #   - 实例 1 启动 gz-server；其余实例用 PX4_GZ_STANDALONE=1 接入
-#   - PX4_GZ_MODEL_POSE 错开出生点（y 方向间隔 2 m）
+#   - PX4_GZ_MODEL_POSE 指定各机出生点（Gazebo ENU 坐标）
 #   - 单个 MicroXRCEAgent 自动接入全部实例
 #   - 话题命名空间自动为 /px4_1 .. /px4_4
+#
+# 赛场说明（worlds/rm2025_field.sdf）：
+#   - RM2025 赛场约 28 m x 15 m，长轴沿 NED 北向（Gazebo ENU +y）
+#   - 蓝方基地在北端（NED x=+13），其前方 NED (10.5, 0) 为基地启动区
+#   - 4 台无人机出生在启动区四周的停机坪上（见 SPAWN_POSES）
+#
+# 坐标换算（PX4 gz_bridge）：NED = (enu_y, enu_x, -enu_z)
+#   即出生点 ENU "(ex, ey)" 对应公共系 NED "(ey, ex)"，
+#   与 params.yaml 中 swarm_coordinator.spawn_offsets 一一对应。
+#
+# 自定义世界加载原理：PX4 启动脚本固定从
+#   $PX4_DIR/Tools/simulation/gz/worlds/<PX4_GZ_WORLD>.sdf 读取世界，
+#   因此本脚本会先把 worlds/rm2025_field.sdf 复制到该目录。
 # =============================================================
 set -e
 NUM_UAVS=${1:-4}
 PX4_DIR="${PX4_DIR:-$HOME/PX4-Autopilot}"
 PX4_BIN="$PX4_DIR/build/px4_sitl_default/bin/px4"
-MODEL="${PX4_MODEL:-gz_x500}"     # 可换 gz_x500_depth 等带相机模型
-AUTOSTART=4001                     # gz_x500 对应 airframe
+MODEL="${PX4_MODEL:-gz_x500}"        # 可换 gz_x500_depth 等带相机模型
+AUTOSTART=4001                        # gz_x500 对应 airframe
+WORLD="${PX4_WORLD:-rm2025_field}"    # 想回到空场地：PX4_WORLD=default
+
+# 工作空间根目录（本脚本位于 <ws>/scripts/）
+WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# 各机出生点（Gazebo ENU "x,y"，z 留空由 PX4 默认 0.5 m）
+# 蓝方基地启动区 NED 中心 (10.5, 0)，四机在其四周：
+#   uav1: NED ( 9.4,  1.3) -> ENU "1.3,9.4"
+#   uav2: NED ( 9.4, -1.3) -> ENU "-1.3,9.4"
+#   uav3: NED (11.6,  1.3) -> ENU "1.3,11.6"
+#   uav4: NED (11.6, -1.3) -> ENU "-1.3,11.6"
+# （修改后必须同步修改 params.yaml 的 spawn_offsets！）
+SPAWN_POSES=("1.3,9.4" "-1.3,9.4" "1.3,11.6" "-1.3,11.6")
 
 if [ ! -x "$PX4_BIN" ]; then
     echo "未找到 PX4 SITL 二进制：$PX4_BIN"
@@ -20,17 +47,33 @@ if [ ! -x "$PX4_BIN" ]; then
     exit 1
 fi
 
+# 把自定义世界复制进 PX4 的 worlds 目录（PX4 只从该目录加载世界）
+if [ "$WORLD" != "default" ]; then
+    WORLD_SRC="$WS_DIR/worlds/$WORLD.sdf"
+    WORLD_DST="$PX4_DIR/Tools/simulation/gz/worlds/$WORLD.sdf"
+    if [ ! -f "$WORLD_SRC" ]; then
+        echo "未找到世界文件：$WORLD_SRC"; exit 1
+    fi
+    if [ ! -d "$(dirname "$WORLD_DST")" ]; then
+        echo "未找到 PX4 worlds 目录：$(dirname "$WORLD_DST")"
+        echo "请确认 PX4-Autopilot 已完整克隆（含 Tools/simulation/gz 子模块）"; exit 1
+    fi
+    cp -u "$WORLD_SRC" "$WORLD_DST"
+    echo "[sim] 已安装世界文件 -> $WORLD_DST"
+fi
+export PX4_GZ_WORLD="$WORLD"
+
 cd "$PX4_DIR"
 PIDS=()
 
 for i in $(seq 1 "$NUM_UAVS"); do
-    POSE="0,$(( (i-1) * 2 ))"      # 出生点：东向间隔 2 m
+    POSE="${SPAWN_POSES[$((i-1))]:-0,0}"
     if [ "$i" -eq 1 ]; then
-        echo "[sim] 启动实例 $i（含 gz-server），出生点 $POSE"
+        echo "[sim] 启动实例 $i（含 gz-server，世界 $WORLD），出生点 ENU($POSE)"
         PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
             "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
     else
-        echo "[sim] 启动实例 $i（standalone），出生点 $POSE"
+        echo "[sim] 启动实例 $i（standalone），出生点 ENU($POSE)"
         PX4_GZ_STANDALONE=1 PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
             "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
     fi
@@ -44,7 +87,7 @@ MicroXRCEAgent udp4 -p 8888 &
 PIDS+=($!)
 
 echo ""
-echo "[sim] 4 机仿真已启动。PX4 日志：/tmp/px4_instance_*.log"
+echo "[sim] 4 机仿真已启动（RM2025 赛场，蓝方基地启动区）。PX4 日志：/tmp/px4_instance_*.log"
 echo "[sim] 验证：ros2 topic list | grep px4_"
 echo "[sim] 另开终端执行任务：./scripts/run_swarm.sh"
 echo "[sim] Ctrl+C 或 ./scripts/stop_sim.sh 结束仿真"
