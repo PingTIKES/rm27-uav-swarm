@@ -49,6 +49,15 @@ if [ ! -x "$PX4_BIN" ]; then
     exit 1
 fi
 
+# 预检：上次仿真的残留进程会抢占端口和模型名——表现为新实例缺飞机、
+# Gazebo GUI 连到旧 gz-server 显示旧世界（比如修复前的单面场地网格）
+if pgrep -f "px4_sitl|MicroXRCEAgent|gz sim|gz-sim" >/dev/null 2>&1; then
+    echo "[sim] 检测到上次仿真残留的进程："
+    pgrep -af "px4_sitl|MicroXRCEAgent|gz sim|gz-sim" | head -8
+    echo "[sim] 请先执行 ./scripts/stop_sim.sh 清理后再启动"
+    exit 1
+fi
+
 # 把自定义世界复制进 PX4 的 worlds 目录（PX4 只从该目录加载世界）
 if [ "$WORLD" != "default" ]; then
     WORLD_SRC="$WS_DIR/worlds/$WORLD.sdf"
@@ -74,10 +83,12 @@ if [ "$WORLD" != "default" ]; then
                 echo "[sim] 警告：场地网格下载失败，Gazebo 中将缺少场地模型"
         fi
         mkdir -p "$PX4_DIR/Tools/simulation/gz/models"
-        # 原版网格法向朝下会被背面剔除（地板不可见），双面化修复是幂等的
+        # 原版网格法向朝下会被背面剔除（地板不可见），双面化修复是幂等的；
+        # 修复器仅用 Python 标准库，失败时直接中止（set -e）以免带着旧网格进仿真
         if [ -s "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" ]; then
+            echo "[sim] 检查场地网格双面化（防止地板被背面剔除）..."
             python3 "$WS_DIR/tools/fix_mesh_normals.py" \
-                "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" || true
+                "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
         fi
         cp -ru "$WS_DIR/worlds/models/." "$PX4_DIR/Tools/simulation/gz/models/"
         export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
@@ -114,7 +125,11 @@ for i in $(seq 1 "$NUM_UAVS"); do
             "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
     fi
     PIDS+=($!)
-    sleep 2                         # 错开启动，避免 Gazebo 模型名竞争
+    if [ "$i" -eq 1 ]; then
+        sleep 10    # 等 gz-server 加载完 11 MB 大场地网格，后续实例才能成功 spawn
+    else
+        sleep 3     # 错开启动，避免 Gazebo 模型名竞争
+    fi
 done
 
 sleep 5
@@ -124,7 +139,8 @@ PIDS+=($!)
 
 echo ""
 echo "[sim] 4 机仿真已启动（世界 $WORLD，蓝方基地启动区）。PX4 日志：/tmp/px4_instance_*.log"
-echo "[sim] 验证：ros2 topic list | grep px4_"
+echo "[sim] 验证：ros2 topic list | grep px4_（应看到 px4_1~px4_4 四组）"
+echo "[sim] 若 Gazebo 里缺飞机：grep -i 'spawn\\|error' /tmp/px4_instance_*.log"
 echo "[sim] 另开终端执行任务：./scripts/run_swarm.sh"
 echo "[sim] Ctrl+C 或 ./scripts/stop_sim.sh 结束仿真"
 
