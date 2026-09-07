@@ -90,6 +90,11 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 - **CONVERGE**：任一机 `/uavN/detections` 出现 `target` 且置信度 >0.5，
 四机立刻汇聚到目标四周（水平错开 1.5 m、保持各自高度层）盘旋 15 秒
 - **RETURN / LAND**：各机返回出生点上空，到位后统一下发 land 指令
+- **静态避障（A\*）**：每个任务航点（搜索/汇聚/返航）都先经
+`uav_planning.field_map` 在赛场占据栅格（默认 RMUC2025 真实场地离线栅格）
+上规划、视线拉直后拆成子航点依次下发，自动绕开资源岛/高地/环公路高架等
+场地障碍；落入障碍的航点自动吸附到最近自由点。启动日志会打印
+"A\* 避障已启用，地图来源：…"；uav_planning 不可用时退化为直航并告警
 - **坐标换算**：每机本地坐标原点在自己出生点，调度器内部维护
 "公共坐标系 = 本机坐标 + 出生点偏移"，下发航点时自动减回偏移——调参时只需想公共系
 - **超时保护**：单航点 30 秒未到达强制切下一个，避免某机卡死拖住全队
@@ -104,16 +109,16 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 ### 2.5 uav_planning —— 规划与安全
 
 - `field_map.py`：**赛场占据栅格地图 + A\***（纯算法模块，不依赖 ROS）。
-  默认加载离线栅格 `maps/rmuc_2025_occ.npz`——由 RMUC2025 真实场地网格
-  （`worlds/models/rmuc_2025`，源自 SMBU-PolarBear rmu_gazebo_simulator）
-  按 z∈[0.35, 3.8] m 光栅化并膨胀 0.5 m 生成；文件缺失时回退到与简化场地
-  `worlds/rm2025_field.sdf` 对应的内置解析障碍。8 连通 A* + 视线拉直平滑。
-  实机演进时接口不变，障碍来源换成 D430i 深度点云局部建图即可
+默认加载离线栅格 `maps/rmuc_2025_occ.npz`——由 RMUC2025 真实场地网格
+（`worlds/models/rmuc_2025`，源自 SMBU-PolarBear rmu_gazebo_simulator）
+按 z∈[0.35, 3.8] m 光栅化并膨胀 0.5 m 生成；文件缺失时回退到与简化场地
+`worlds/rm2025_field.sdf` 对应的内置解析障碍。8 连通 A* + 视线拉直平滑。
+实机演进时接口不变，障碍来源换成 D430i 深度点云局部建图即可
 - `goal_planner.py`：**RViz 打点导航**。订阅 RViz "2D Nav Goal" 的 `/goal_pose`，
-  A* 规划后把路径拆成航点序列依次下发给指定无人机的 offboard 节点；
-  同时发布 `/field_map` 占据栅格、`/planned_path` 路径、`/goal_marker` 目标标记
+A* 规划后把路径拆成航点序列依次下发给指定无人机的 offboard 节点；
+同时发布 `/field_map` 占据栅格、`/planned_path` 路径、`/goal_marker` 目标标记
 - `pose_tf_publisher.py`：**位姿→TF+标记桥**。把 4 机的 PX4 本地 NED 位置换算到
-  公共系，广播 `map->uavN` TF 并发布机身/机头/机号标记供 RViz 显示
+公共系，广播 `map->uavN` TF 并发布机身/机头/机号标记供 RViz 显示
 - `collision_monitor.py`：**集群级防碰兜底**。10 Hz 两两计算机间 3D 距离：
 <1.5 m 发告警到 `/swarm/collision_warning`；<0.8 m 直接沿连线反向把两机各拉开 1 m
 （2 秒冷却，避免与调度器抢航点）。仿真靠高度分层基本不触发，实机是安全底线
@@ -206,7 +211,7 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > >
 > 想回到上一版的简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`；
 > 想用 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
->
+> >
 > **关于 rmu_gazebo_simulator 的说明**：该仿真器基于 Ignition Gazebo Fortress
 > 且面向地面机器人（rmoss 底盘/云台/发射机构插件），PX4 v1.15.4 的 SITL 需要
 > gz-garden，两者不能直接共跑。因此本工作空间采取「取其场地、留我飞控」的方式：
@@ -214,7 +219,7 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > 原插件均已移除），世界文件 `worlds/rmuc_2025_field.sdf` 按 PX4 官方模板补齐
 > gz-garden 系统插件（NavSat/AirPressure/ApplyLinkWrench 等）。若你需要他们
 > 的地面对抗逻辑，可用他们的 Docker 镜像单独跑原仿真器。
->
+> >
 > **注意**：Git 仓库不含场地网格二进制（zip 发行包已内含双面化修复版）。
 > clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
 > `scripts/fetch_field_model.sh` 下载网格、双面化修复（原版大量面片法向朝下，
@@ -238,9 +243,13 @@ ros2 topic list | grep px4_
 ### 第 4 步：观察预期行为
 
 4 架 x500 依次解锁 → 爬升到 2.0/2.5/3.0/3.5 m 分层高度 →
-各自飞向分到的条带做割草机搜索（范围 NED x∈[-10,8]，y∈[-6,6]，覆盖中场至红方半场）→
+各自飞向分到的条带做割草机搜索（范围 NED x∈[-10,8]，y∈[-6,6]，覆盖中场至红方半场；
+每个航点都经 A* 绕开场地障碍，个别落入障碍的航线点会自动吸附到障碍边缘）→
 飞到绿色目标柱（NED (-9, 2)）附近的飞机"发现"目标 →
 四机汇聚盘旋 15 秒 → 各自返回出生停机坪上空 → 降落上锁 → 终端打印"任务结束"。
+
+终端 B 启动时应打印 `A* 避障已启用，地图来源：…rmuc_2025_occ.npz`；
+若打印的是"退化为直航（无避障）"，见下方排错表。
 
 ### 第 5 步：结束仿真
 
@@ -266,7 +275,7 @@ ros2 launch uav_bringup goal_nav.launch.py uav_id:=3    # 打点控制 3 号机
 - **不要与 `run_swarm.sh` 同时跑**——两者都会给 `/uavN/waypoint` 发航点会互抢
 - 调地图：`src/uav_planning/uav_planning/field_map.py`（分辨率/膨胀/障碍清单）
 - 实机演进：把 field_map 的障碍来源换成 D430i 深度点云局部建图，
-  goal_planner 的接口（/goal_pose 进、/uavN/waypoint 出）完全不用动
+goal_planner 的接口（/goal_pose 进、/uavN/waypoint 出）完全不用动
 
 ## 4. 运行中调试命令
 
@@ -298,6 +307,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（双面化修复，幂等），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
+| 集群任务中无人机直飞撞障碍 | 避障没启用：看 `run_swarm.sh` 终端应打印"A\* 避障已启用，地图来源：…rmuc_2025_occ.npz"。若打印"退化为直航"，跑一次 `bash scripts/fetch_field_model.sh` 生成栅格，重新 `colcon build` 并 `source install/setup.bash` 后再启动；若来源是"内置解析障碍（简化场地）"，说明 npz 没装进 install，重新编译即可 |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |
 | 打点没反应 | `ros2 topic echo /goal_pose` 确认 RViz 发出去了；`ros2 topic echo /goal_planner/state` 看状态；NO_PATH 说明起终点被障碍封死，看 goal_planner 终端日志 |
 
