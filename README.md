@@ -223,9 +223,9 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > >
 > **注意**：Git 仓库不含场地网格二进制（zip 发行包已内含双面化修复版）。
 > clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
-> `scripts/fetch_field_model.sh` 下载网格、双面化修复（原版大量面片法向朝下，
-> 不修复会被渲染引擎背面剔除、地板不可见）并用 `tools/rasterize_field.py`
-> 重新生成 A* 用的占据栅格（需联网 + numpy，可重复执行）。
+> `scripts/fetch_field_model.sh`（自动按顺序尝试官方源/jsdelivr/ghproxy 镜像）
+> 下载网格、双面化修复（原版大量面片法向朝下，不修复会被渲染引擎背面剔除、
+> 地板不可见）并用 `tools/rasterize_field.py` 重新生成 A* 用的占据栅格。
 
 **验证**（新开终端）：
 
@@ -305,7 +305,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
-| 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（双面化修复，幂等，仅用 Python 标准库），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真。**若已修复仍缺半边**：基本是上次仿真的旧 gz-server 还在运行、GUI 连的是旧世界——`./scripts/stop_sim.sh` 清理干净再启动（新版 start_sim_4uav.sh 会预检拦截这种情况）；另外确认启动日志里有「检查场地网格双面化」一行，没有说明你跑的是旧版脚本（先 `git pull`） |
+| 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（自动按顺序尝试官方源/jsdelivr/ghproxy 多个镜像下载 + 双面化修复，幂等），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真。所有镜像都失败时：解压 zip 发行包，把 `uav_ws/worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 复制到工作空间同路径（zip 内已是双面版）。**若已修复仍缺半边**：基本是上次仿真的旧 gz-server 还在运行、GUI 连的是旧世界——`./scripts/stop_sim.sh` 清理干净再启动（新版 start_sim_4uav.sh 会预检拦截这种情况）；另外确认启动日志里有「检查场地网格双面化」一行，没有说明你跑的是旧版脚本（先 `git pull`） |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | 集群任务中无人机直飞撞障碍 | 避障没启用：看 `run_swarm.sh` 终端应打印"A\* 避障已启用，地图来源：…rmuc_2025_occ.npz"。若打印"退化为直航"，跑一次 `bash scripts/fetch_field_model.sh` 生成栅格，重新 `colcon build` 并 `source install/setup.bash` 后再启动；若来源是"内置解析障碍（简化场地）"，说明 npz 没装进 install，重新编译即可 |
