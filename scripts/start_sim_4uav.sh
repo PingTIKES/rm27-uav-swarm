@@ -51,6 +51,13 @@
 #      即使有杀不掉的残留，新旧两轮也互相不可见。
 #   注意：手动在别的终端用 gz topic/gz service 调试时，需先
 #   source /tmp/rm27_gz_env.sh（写入本轮分区号）才能看到话题。
+#
+# gz-server 猝死说明：
+#   服务器进程一旦崩溃（如场地网格退化三角形触发 ODE 三角网格
+#   碰撞断言，报"已中止 (核心已转储)"），standalone 实例的创建
+#   请求会无限重试且 PX4 进程不死，看门狗无法自愈。本脚本在
+#   等待世界就绪/错峰启动/看门狗轮询中持续检查服务器存活，
+#   一旦猝死立即输出诊断（指向 /tmp/gz_server.log）并整体退出。
 # =============================================================
 set -e
 NUM_UAVS=${1:-4}
@@ -113,7 +120,9 @@ if [ "$WORLD" != "default" ]; then
         STL_SRC="$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
         if [ -f "$STL_SRC" ]; then
             echo "[sim] 场地模型直接加载：$STL_SRC"
-            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d）"
+            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)"
+            echo "[sim]   参考值：fa41fd76e66492d8c87762355f461977（削墙+清理退化三角形版，推荐）"
+            echo "[sim]           bf4ab3fc2320af8cff00e6c52be3409d（旧削墙版，含 402 个退化三角形）"
         fi
         # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用）
         if [ ! -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ]; then
@@ -158,6 +167,10 @@ wait_world_ready() {
         if timeout 5 gz service -l 2>/dev/null | grep -q "/world/$WORLD/create"; then
             echo "[sim] Gazebo 世界已就绪（第 $t 次探测）"
             return 0
+        fi
+        if [ -n "${GZ_SERVER_PID:-}" ] && ! kill -0 "$GZ_SERVER_PID" 2>/dev/null; then
+            echo "[sim] gz-server 在世界就绪前已退出"
+            return 2
         fi
         sleep 2
     done
@@ -207,6 +220,18 @@ cleanup_sim() {
     fi
 }
 
+# gz-server 猝死处理：服务器一死，standalone 实例的模型创建请求会无限
+# 重试（PX4 进程不死），看门狗再等也是白费——立即给出诊断并整体退出
+server_dead_abort() {
+    echo "[sim] 严重：gz-server（PID ${GZ_SERVER_PID:-?}）已崩溃退出，后续模型无法加载。"
+    echo "[sim] 崩溃原因在 /tmp/gz_server.log 末尾几十行，请执行："
+    echo "[sim]   tail -n 50 /tmp/gz_server.log"
+    echo "[sim] 并把输出发出来定位（常见为 ODE 三角网格碰撞断言或显卡驱动异常）。"
+    kill "${PIDS[@]}" 2>/dev/null || true
+    cleanup_sim
+    exit 1
+}
+
 # ---- 0. 清理上一次仿真的残留进程（首次运行无残留，秒过） ----
 if pgrep -f "$SIM_PROC_PAT" >/dev/null 2>&1; then
     echo "[sim] 检测到上一次仿真的残留进程，先清理..."
@@ -216,17 +241,21 @@ fi
 # ---- 1. 启动 Gazebo（server + GUI），与 PX4 实例完全解耦 ----
 echo "[sim] 启动 gz-server（世界 $WORLD，分区 $GZ_PARTITION）..."
 gz sim -r -s -v 2 "$WORLD_SDF" > /tmp/gz_server.log 2>&1 &
-PIDS+=($!)
+GZ_SERVER_PID=$!
+PIDS+=($GZ_SERVER_PID)
 if [ -z "$HEADLESS" ]; then
     gz sim -g -v 2 > /tmp/gz_gui.log 2>&1 &
     PIDS+=($!)
 fi
 
 # ---- 2. 等待世界就绪 ----
-wait_world_ready
+wr_rc=0
+wait_world_ready || wr_rc=$?
+[ "$wr_rc" -eq 2 ] && server_dead_abort
 
 # ---- 3. 错峰启动全部 standalone PX4 实例 ----
 for i in $(seq 1 "$NUM_UAVS"); do
+    kill -0 "$GZ_SERVER_PID" 2>/dev/null || server_dead_abort
     start_uav "$i"
     sleep 5          # 错峰，减轻 gz-server 瞬时压力
 done
@@ -234,6 +263,7 @@ done
 # ---- 4. 看门狗：确认各机模型加载；只重启"进程已死且模型未出现"的实例 ----
 echo "[sim] 看门狗：等待全部 $NUM_UAVS 台模型加载..."
 for round in $(seq 1 40); do
+    kill -0 "$GZ_SERVER_PID" 2>/dev/null || server_dead_abort
     all_ok=1
     for i in $(seq 1 "$NUM_UAVS"); do
         MN="${MODEL_BASE}_$i"
