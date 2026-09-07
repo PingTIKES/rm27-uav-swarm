@@ -186,8 +186,9 @@ colcon build --packages-up-to uav_bringup uav_swarm
 ```
 
 脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
-`worlds/models/rmuc_2025/`（场地网格模型）复制进 PX4 的 models 目录并加入
-`GZ_SIM_RESOURCE_PATH`，设置 `PX4_GZ_WORLD=rmuc_2025_field` → 清理上一次仿真的
+`worlds/models/` 置于 `GZ_SIM_RESOURCE_PATH` 最前（场地网格始终直接加载
+工作空间里的 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 这一份，不做任何复制），
+设置 `PX4_GZ_WORLD=rmuc_2025_field` → 清理上一次仿真的
 残留进程（gz-sim 后端常脱离前台进程组，不清会导致新旧 server 串台、界面空白）→
 直接启动 gz-server / gz-gui（与 PX4 实例完全解耦）→ 轮询等待 Gazebo 世界就绪后
 错峰启动 4 个 standalone PX4 实例（实例内部会无限重试模型创建请求，世界未就绪
@@ -303,7 +304,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 第二次启动 Gazebo 空白/没有场地 | 上一次仿真没退干净（除 gz-sim 后端外，官方确认 `gz sim -g` 的 ruby 启动器/GUI 也会残留），新旧 server 同时在线导致服务发现串台：start_sim_4uav.sh 启动前按 `gz[- ]sim` 统一匹配强清理，且每轮仿真用唯一 GZ_PARTITION 隔离（残留杀不净也不串台）；手动清理用 `./scripts/stop_sim.sh` 或 `pkill -9 -f "gz[- ]sim"`；仍空白请带上 /tmp/gz_server.log 与 /tmp/gz_gui.log 排查 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
-| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
+| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：确认 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 存在（缺失时脚本会自动下载）；Gazebo 直接加载工作空间这份文件，启动日志会打印其 md5（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d），更换网格后无需任何同步操作 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |
