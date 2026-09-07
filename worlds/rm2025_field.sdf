@@ -5,7 +5,7 @@
   布局参考 RoboMaster 2025 超级对抗赛赛场（约 28 m x 15 m）：
     - 场地长轴沿 NED 北向（即 Gazebo ENU 的 +y 轴），南端红方基地、北端蓝方基地
     - 中央资源岛 + 能量机关架（简化）、两侧前哨站、两端高地、二级台阶
-    - 四周 4 m 高围挡（防止无人机飞出场地）
+    - 四周 2 m 高围挡（防止无人机贴地飞出场地）
     - 蓝方基地前为"基地启动区"（浅蓝色地贴），四台无人机出生在其四周的
       停机坪（黄色圆垫），与 scripts/start_sim_4uav.sh 的出生点一一对应
 
@@ -270,43 +270,43 @@
       </link>
     </model>
 
-    <!-- ================= 四周围挡（4 m 高） ================= -->
+    <!-- ================= 四周围挡（2 m 高） ================= -->
     <model name="wall_north">
       <static>true</static>
-      <pose>0 14.2 2.0 0 0 0</pose>
+      <pose>0 14.2 1.0 0 0 0</pose>
       <link name="link">
-        <collision name="collision"><geometry><box><size>15.6 0.2 4.0</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>15.6 0.2 4.0</size></box></geometry>
+        <collision name="collision"><geometry><box><size>15.6 0.2 2.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>15.6 0.2 2.0</size></box></geometry>
           <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
         </visual>
       </link>
     </model>
     <model name="wall_south">
       <static>true</static>
-      <pose>0 -14.2 2.0 0 0 0</pose>
+      <pose>0 -14.2 1.0 0 0 0</pose>
       <link name="link">
-        <collision name="collision"><geometry><box><size>15.6 0.2 4.0</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>15.6 0.2 4.0</size></box></geometry>
+        <collision name="collision"><geometry><box><size>15.6 0.2 2.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>15.6 0.2 2.0</size></box></geometry>
           <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
         </visual>
       </link>
     </model>
     <model name="wall_east">
       <static>true</static>
-      <pose>7.6 0 2.0 0 0 0</pose>
+      <pose>7.6 0 1.0 0 0 0</pose>
       <link name="link">
-        <collision name="collision"><geometry><box><size>0.2 28.6 4.0</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.2 28.6 4.0</size></box></geometry>
+        <collision name="collision"><geometry><box><size>0.2 28.6 2.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 28.6 2.0</size></box></geometry>
           <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
         </visual>
       </link>
     </model>
     <model name="wall_west">
       <static>true</static>
-      <pose>-7.6 0 2.0 0 0 0</pose>
+      <pose>-7.6 0 1.0 0 0 0</pose>
       <link name="link">
-        <collision name="collision"><geometry><box><size>0.2 28.6 4.0</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.2 28.6 4.0</size></box></geometry>
+        <collision name="collision"><geometry><box><size>0.2 28.6 2.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.2 28.6 2.0</size></box></geometry>
           <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.4 0.4 0.43 1</diffuse></material>
         </visual>
       </link>
