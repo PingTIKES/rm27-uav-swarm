@@ -119,8 +119,10 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 ### 2.7 uav_localization —— OpenVINS 视觉定位（实机）
 
 仿真用 PX4 EKF2+GPS 定位，**不需要本包**；实机无 GPS 环境下启用。
-`openvins_params.yaml` 已按框架第 7 节预设：640×400 双目、特征点 ≤150、
-输出 20 Hz、关闭回环，Kalibr 标定结果直接填入。输出 `/uavN/odom` 转
+相机为 **Intel RealSense D430i**（双目红外全局快门，基线 50mm，内置 BMI055 IMU，
+出厂已标定），驱动用官方 `ros-humble-realsense2-camera`。
+`openvins_params.yaml` 已按 D430i 预设：640×480 双目红外话题、IMU 合并话题、
+特征点 ≤150、输出 20 Hz、关闭回环。输出 `/uavN/odom` 转
 `vehicle_visual_odometry` 喂给飞控 EKF2 融合（飞控参数 `EKF2_EV_CTRL=15`）。
 
 ### 2.8 uav_bringup —— 启动与参数（总开关）
@@ -149,7 +151,7 @@ chmod +x setup_env.sh scripts/*.sh
 
 脚本自动完成 6 件事（详见脚本内注释）：
 装 ROS2 依赖 → 克隆 PX4-Autopilot v1.15.4 并编译 SITL（虚拟飞控）→
-编译安装 Micro-XRCE-DDS-Agent（飞控↔ROS2 桥）→
+编译安装 Micro-XRCE-DDS-Agent v2.4.3（飞控↔ROS2 桥）→
 克隆 px4_msgs/px4_ros_com/BehaviorTree.CPP 到 third_party → 软链进 src → 配置 CycloneDDS。
 
 ### 第 1 步：编译工作空间（以后每次改代码都要做）
@@ -215,6 +217,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 现象 | 原因与处理 |
 |---|---|
 | 编译 Agent 报「无效引用：2.12.x」 | v2.4.2 依赖的 Fast-DDS 分支已被官方删除：`git checkout v2.4.3` 后删 `build/` 重新编译（setup_env.sh 已修复） |
+| 启动 swarm_coordinator 报「Couldn't parse params file」 | params.yaml 顶层有游离条目（如 sim_target），必须为「节点名: ros__parameters:」结构（已修复） |
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
 | Gazebo 里只有 1 架飞机 | 实例启动太快抢模型名：把脚本里的 `sleep 2` 调大 |
@@ -235,8 +238,11 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 
 - [ ] `setup_env.sh` 在 RK3566 上只执行第 1、4、6 步（**不要**装 Gazebo/PX4 SITL）
 - [ ] 飞控串口 ↔ uXRCE-DDS Agent：`MicroXRCEAgent serial --dev /dev/ttyS1 -b 921600`
+- [ ] 安装 D430i 驱动：`sudo apt install ros-humble-realsense2-camera`，启动命令见
+      `uav_localization/config/openvins_params.yaml` 头部注释（VIO 模式关深度流）
 - [ ] 启动 OpenVINS：`ros2 launch uav_localization openvins.launch.py`，
       输出 `/uavN/odom` 转 `vehicle_visual_odometry` 喂给 EKF2（`EKF2_EV_CTRL=15`）
-- [ ] 用 `yolo_detector.py` 替换 `sim_target_detector.py`（加载 `models/yolov5s.rknn`）
+- [ ] 用 `yolo_detector.py` 替换 `sim_target_detector.py`（加载 `models/yolov5s.rknn`；
+      **D430i 无 RGB，检测用左红外灰度图**）
 - [ ] 集群通信改用 WiFi + CycloneDDS
 - [ ] 实机首飞用 `uav_bringup.launch.py`（`auto_takeoff:=False`，遥控器接管验证后再放开）
