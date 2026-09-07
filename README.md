@@ -103,8 +103,11 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 
 ### 2.5 uav_planning —— 规划与安全
 
-- `field_map.py`：**RM2025 赛场占据栅格地图 + A\***（纯算法模块，不依赖 ROS）。
-  障碍物与 `worlds/rm2025_field.sdf` 一一对应，8 连通 A* + 视线拉直平滑。
+- `field_map.py`：**赛场占据栅格地图 + A\***（纯算法模块，不依赖 ROS）。
+  默认加载离线栅格 `maps/rmuc_2025_occ.npz`——由 RMUC2025 真实场地网格
+  （`worlds/models/rmuc_2025`，源自 SMBU-PolarBear rmu_gazebo_simulator）
+  按 z∈[0.35, 3.8] m 光栅化并膨胀 0.5 m 生成；文件缺失时回退到与简化场地
+  `worlds/rm2025_field.sdf` 对应的内置解析障碍。8 连通 A* + 视线拉直平滑。
   实机演进时接口不变，障碍来源换成 D430i 深度点云局部建图即可
 - `goal_planner.py`：**RViz 打点导航**。订阅 RViz "2D Nav Goal" 的 `/goal_pose`，
   A* 规划后把路径拆成航点序列依次下发给指定无人机的 offboard 节点；
@@ -177,15 +180,17 @@ colcon build --packages-up-to uav_bringup uav_swarm
 ./scripts/start_sim_4uav.sh
 ```
 
-脚本依次：把 `worlds/rm2025_field.sdf` 复制进 PX4 的 worlds 目录并设置
-`PX4_GZ_WORLD=rm2025_field` → 启动 PX4 实例 1（连带 Gazebo 服务器）→
-间隔 2 秒启动实例 2/3/4（standalone 接入）→ 启动 MicroXRCEAgent
-（udp4:8888，自动接管全部 4 个实例）。
+脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
+`worlds/models/rmuc_2025/`（场地网格模型）复制进 PX4 的 models 目录并加入
+`GZ_SIM_RESOURCE_PATH`，设置 `PX4_GZ_WORLD=rmuc_2025_field` → 启动 PX4 实例 1
+（连带 Gazebo 服务器）→ 间隔 2 秒启动实例 2/3/4（standalone 接入）→
+启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
 
-Gazebo 窗口中出现的是 **RM2025 赛场简化模型**（28 m × 15 m）：四周 4 m 围挡、
-南北两端红蓝基地、中央资源岛与能量机关架、两侧前哨站、高地与二级台阶，
-以及搜索目标（亮绿色立柱，NED (-9, 2)）。四架 x500 出生在**蓝方基地启动区
-（浅蓝色地贴，NED 中心 (10.5, 0)）四周的黄色停机坪**上：
+Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 全场网格，
+源自 [SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)，
+已适配 gz-garden 并整体旋转 90° 使长轴沿 NED 北向）：场地两端为红蓝基地，
+中央资源岛/能量机关、环形公路、高地等地形均为真实几何。四架 x500 出生在
+**蓝方基地启动区（NED 中心约 (10.5, 0)）四周的黄色停机坪**上：
 
 | 无人机 | 公共系 NED 出生点 | Gazebo ENU 出生点 |
 | --- | --- | --- |
@@ -199,10 +204,21 @@ Gazebo 窗口中出现的是 **RM2025 赛场简化模型**（28 m × 15 m）：�
 > `scripts/start_sim_4uav.sh` 的 `SPAWN_POSES`（ENU）、`params.yaml` 的
 > `spawn_offsets`（NED）、launch 文件中的 `SPAWN_OFFSETS_NED`（NED）。
 > >
-> 想回到 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
-> 想换 1:1 精细场地：将组委会官方场地模型用 Blender 减面导出 .dae/.stl，
-> 替换 worlds/rm2025_field.sdf 中相应 model 块
-> （参考 bbs.robomaster.com/article/714072 的做法）。
+> 想回到上一版的简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`；
+> 想用 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
+>
+> **关于 rmu_gazebo_simulator 的说明**：该仿真器基于 Ignition Gazebo Fortress
+> 且面向地面机器人（rmoss 底盘/云台/发射机构插件），PX4 v1.15.4 的 SITL 需要
+> gz-garden，两者不能直接共跑。因此本工作空间采取「取其场地、留我飞控」的方式：
+> 仅复用其 RMUC2025 全场网格模型（`worlds/models/rmuc_2025/`，STL + 模型定义，
+> 原插件均已移除），世界文件 `worlds/rmuc_2025_field.sdf` 按 PX4 官方模板补齐
+> gz-garden 系统插件（NavSat/AirPressure/ApplyLinkWrench 等）。若你需要他们
+> 的地面对抗逻辑，可用他们的 Docker 镜像单独跑原仿真器。
+>
+> **注意**：Git 仓库不含 5.7 MB 的场地网格二进制（zip 发行包已内含）。
+> clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
+> `scripts/fetch_field_model.sh` 下载网格并用 `tools/rasterize_field.py`
+> 重新生成 A* 用的占据栅格（需联网 + numpy，可重复执行）。
 
 **验证**（新开终端）：
 
@@ -276,7 +292,8 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
 | Gazebo 里只有 1 架飞机 | 实例启动太快抢模型名：把脚本里的 `sleep 2` 调大 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
-| Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rm2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
+| Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
+| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |
