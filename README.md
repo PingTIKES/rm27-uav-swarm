@@ -188,8 +188,9 @@ colcon build --packages-up-to uav_bringup uav_swarm
 脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
 `worlds/models/rmuc_2025/`（场地网格模型）复制进 PX4 的 models 目录并加入
 `GZ_SIM_RESOURCE_PATH`，设置 `PX4_GZ_WORLD=rmuc_2025_field` → 启动 PX4 实例 1
-（连带 Gazebo 服务器）→ 间隔 2 秒启动实例 2/3/4（standalone 接入）→
-启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
+（连带 Gazebo 服务器）→ 实例 2/3/4 间隔启动（standalone 接入，首实例后等待 10 秒
+让 gz-server 加载完大场地网格）→ 启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
+启动前有残留进程预检，发现上次仿真没清干净会拒绝启动并提示先跑 stop_sim.sh。
 
 Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 全场网格，
 源自 [SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)，
@@ -300,11 +301,11 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 编译 Agent 报「无效引用：2.12.x」 | v2.4.2 依赖的 Fast-DDS 分支已被官方删除：`git checkout v2.4.3` 后删 `build/` 重新编译（setup_env.sh 已修复） |
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
-| Gazebo 里只有 1 架飞机 | 实例启动太快抢模型名：把脚本里的 `sleep 2` 调大 |
+| Gazebo 里缺飞机（少于 4 架） | 多为上次仿真残留进程抢占端口/模型名，或实例 2~4 在 gz-server 加载大场地时抢跑导致 spawn 失败：先 `./scripts/stop_sim.sh` 清理再启动（start_sim_4uav.sh 已带残留进程预检和首实例 10 秒等待）；仍缺机时 `grep -i 'spawn\|error' /tmp/px4_instance_*.log` 定位是哪个实例失败 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
-| 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（双面化修复，幂等），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真 |
+| 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（双面化修复，幂等，仅用 Python 标准库），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真。**若已修复仍缺半边**：基本是上次仿真的旧 gz-server 还在运行、GUI 连的是旧世界——`./scripts/stop_sim.sh` 清理干净再启动（新版 start_sim_4uav.sh 会预检拦截这种情况）；另外确认启动日志里有「检查场地网格双面化」一行，没有说明你跑的是旧版脚本（先 `git pull`） |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | 集群任务中无人机直飞撞障碍 | 避障没启用：看 `run_swarm.sh` 终端应打印"A\* 避障已启用，地图来源：…rmuc_2025_occ.npz"。若打印"退化为直航"，跑一次 `bash scripts/fetch_field_model.sh` 生成栅格，重新 `colcon build` 并 `source install/setup.bash` 后再启动；若来源是"内置解析障碍（简化场地）"，说明 npz 没装进 install，重新编译即可 |
