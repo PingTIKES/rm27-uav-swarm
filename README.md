@@ -215,9 +215,10 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > gz-garden 系统插件（NavSat/AirPressure/ApplyLinkWrench 等）。若你需要他们
 > 的地面对抗逻辑，可用他们的 Docker 镜像单独跑原仿真器。
 >
-> **注意**：Git 仓库不含 5.7 MB 的场地网格二进制（zip 发行包已内含）。
+> **注意**：Git 仓库不含场地网格二进制（zip 发行包已内含双面化修复版）。
 > clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
-> `scripts/fetch_field_model.sh` 下载网格并用 `tools/rasterize_field.py`
+> `scripts/fetch_field_model.sh` 下载网格、双面化修复（原版大量面片法向朝下，
+> 不修复会被渲染引擎背面剔除、地板不可见）并用 `tools/rasterize_field.py`
 > 重新生成 A* 用的占据栅格（需联网 + numpy，可重复执行）。
 
 **验证**（新开终端）：
@@ -294,6 +295,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
+| 场地只能看到一半/地板变碎片 | 原版网格法向朝下被背面剔除：跑一次 `bash scripts/fetch_field_model.sh`（双面化修复，幂等），并确认 `~/PX4-Autopilot/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl` 已更新为 228468 面（约 11 MB），然后重启仿真 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |
