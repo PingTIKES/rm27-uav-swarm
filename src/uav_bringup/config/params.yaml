@@ -17,6 +17,12 @@ swarm_coordinator:
     alt_layer: 0.5                # 相邻机高度层差 m
     converge_time: 15.0           # 目标上空盘旋时间 s
     wp_timeout: 30.0
+    # 避障地图：空 = 自动用 uav_planning 安装的 rmuc_2025_occ.npz
+    # （RMUC2025 真实场地网格按 0.35~3.8 m 高度带光栅化，已膨胀 0.5 m）；
+    # 文件缺失时回退到简化场地的内置解析障碍；
+    # 用简化场地（PX4_WORLD=rm2025_field）时设为 'builtin' 强制内置障碍，
+    # 否则会误用真实场地的栅格
+    map_file: ''
 
 collision_monitor:
   ros__parameters:
