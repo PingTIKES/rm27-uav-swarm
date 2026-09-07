@@ -188,7 +188,8 @@ colcon build --packages-up-to uav_bringup uav_swarm
 脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
 `worlds/models/rmuc_2025/`（场地网格模型）复制进 PX4 的 models 目录并加入
 `GZ_SIM_RESOURCE_PATH`，设置 `PX4_GZ_WORLD=rmuc_2025_field` → 启动 PX4 实例 1
-（连带 Gazebo 服务器）→ 间隔 2 秒启动实例 2/3/4（standalone 接入）→
+（连带 Gazebo 服务器）→ 轮询等待 Gazebo 世界就绪后逐台启动实例 2/3/4
+（standalone 接入；每台启动后确认模型真的出现在世界中，未出现自动杀掉重启重试）→
 启动 MicroXRCEAgent（udp4:8888，自动接管全部 4 个实例）。
 
 Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 全场网格，
@@ -295,7 +296,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 编译 Agent 报「无效引用：2.12.x」 | v2.4.2 依赖的 Fast-DDS 分支已被官方删除：`git checkout v2.4.3` 后删 `build/` 重新编译（setup_env.sh 已修复） |
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
-| Gazebo 里只有 1 架飞机 | 实例启动太快抢模型名：把脚本里的 `sleep 2` 调大 |
+| Gazebo 里飞机数量不够（如只有 1~3 架） | standalone 实例启动过早，模型创建请求被 Gazebo 静默丢弃（等再久也不会出现）：start_sim_4uav.sh 已内置世界就绪等待 + 逐台加载确认与自动重试；仍缺机时看终端 A 的 [sim] 警告和 /tmp/px4_instance_N.log |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
 | 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：手动 `cp -r worlds/models/rmuc_2025 ~/PX4-Autopilot/Tools/simulation/gz/models/`，或检查终端 A 是否打印「已安装场地模型」 |
