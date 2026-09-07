@@ -2,8 +2,11 @@
 # =============================================================
 # 启动 4 机 PX4 SITL + Gazebo(RM2025 赛场) + MicroXRCEAgent
 #
-# 依据 PX4 官方多机仿真方式：
-#   - 实例 1 启动 gz-server；其余实例用 PX4_GZ_STANDALONE=1 接入
+# 架构（PX4 官方多机仿真的解耦版）：
+#   - 本脚本直接启动 gz-server / gz-gui，再启动 NUM_UAVS 个
+#     PX4_GZ_STANDALONE=1 的 PX4 实例接入
+#   - standalone 实例内部会无限重试模型创建请求（PX4 源码
+#     GZBridge::init 中的 while 循环），世界未就绪不会丢请求
 #   - PX4_GZ_MODEL_POSE 指定各机出生点（Gazebo ENU 坐标）
 #   - 单个 MicroXRCEAgent 自动接入全部实例
 #   - 话题命名空间自动为 /px4_1 .. /px4_4
@@ -19,16 +22,21 @@
 #   即出生点 ENU "(ex, ey)" 对应公共系 NED "(ey, ex)"，
 #   与 params.yaml 中 swarm_coordinator.spawn_offsets 一一对应。
 #
-# 自定义世界加载原理：PX4 启动脚本固定从
-#   $PX4_DIR/Tools/simulation/gz/worlds/<PX4_GZ_WORLD>.sdf 读取世界，
-#   因此本脚本会先把 worlds/$WORLD.sdf 复制到该目录。
+# 自定义世界加载：本脚本先把 worlds/$WORLD.sdf 复制到
+#   $PX4_DIR/Tools/simulation/gz/worlds/，再用绝对路径启动 gz-server。
 #
 # 缺机（少飞机）问题说明：
-#   standalone 实例启动时若 Gazebo 世界还没加载完，其模型创建请求会
-#   被静默丢弃——之后等再久飞机也不会出现。因此本脚本不再靠固定
-#   sleep 碰运气，而是：实例 1 启动后轮询等待世界就绪（/world/<世界>/
-#   create 服务出现），之后逐台启动实例并用 gz model 确认模型真的
-#   出现，未出现则杀掉该实例重启重试（最多 3 次）。
+#   PX4 创建模型时 set_allow_renaming(false)：若世界中已存在同名
+#   模型，创建请求返回失败，GZBridge 报错后整个 PX4 实例进程退出。
+#   因此"探测不到模型就杀掉重启"会造成同名冲突死亡螺旋（曾导致
+#   只剩 1 台）。本脚本的做法：
+#   1) 先启动 gz-server 并轮询等待世界就绪（/world/<世界>/create
+#      服务出现），再错峰启动各 standalone 实例；
+#   2) 看门狗用世界 pose 信息流（/world/<世界>/pose/info，世界内
+#      真实状态，非 gz model CLI）确认各机模型出现；
+#   3) 只有当某实例进程已退出且其模型确实未出现时，才重启该实例
+#      （此时世界中无此名字，重启绝无冲突）；进程活着但模型未出现
+#      = 创建请求仍在 PX4 内部排队重试，继续等即可。
 # =============================================================
 set -e
 NUM_UAVS=${1:-4}
@@ -56,7 +64,7 @@ if [ ! -x "$PX4_BIN" ]; then
     exit 1
 fi
 
-# 把自定义世界复制进 PX4 的 worlds 目录（PX4 只从该目录加载世界）
+# 把自定义世界复制进 PX4 的 worlds 目录（与 PX4 自带世界同目录管理）
 if [ "$WORLD" != "default" ]; then
     WORLD_SRC="$WS_DIR/worlds/$WORLD.sdf"
     WORLD_DST="$PX4_DIR/Tools/simulation/gz/worlds/$WORLD.sdf"
@@ -82,7 +90,7 @@ if [ "$WORLD" != "default" ]; then
         fi
         mkdir -p "$PX4_DIR/Tools/simulation/gz/models"
         cp -ru "$WS_DIR/worlds/models/." "$PX4_DIR/Tools/simulation/gz/models/"
-        export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
+        export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:${GZ_SIM_RESOURCE_PATH:-}"
         echo "[sim] 已安装场地模型 -> $PX4_DIR/Tools/simulation/gz/models/"
         # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用）
         if [ ! -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ]; then
@@ -100,81 +108,94 @@ if [ "$WORLD" != "default" ]; then
     fi
 fi
 export PX4_GZ_WORLD="$WORLD"
+# 本脚本直接启动 gz-server，需显式给出 PX4 模型库路径
+#（原来由 PX4 启动流程中的 gz_env.sh 设置）
+export GZ_SIM_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gz/models:${GZ_SIM_RESOURCE_PATH:-}"
 
 cd "$PX4_DIR"
 PIDS=()
+declare -A UAV_PID=()                 # 实例号 -> PX4 进程号（看门狗用）
+MODEL_BASE="${MODEL#gz_}"             # gz_x500 -> x500（Gazebo 世界中的模型名前缀）
+WORLD_SDF="$PX4_DIR/Tools/simulation/gz/worlds/$WORLD.sdf"
 
 # 等待 Gazebo 世界加载完成（/world/<world>/create 服务出现 = 世界就绪，
-# 之后 standalone 实例的模型创建请求才会被正常处理）
+# 之后 standalone 实例的模型创建请求才会被正常受理）
 wait_world_ready() {
     echo "[sim] 等待 Gazebo 世界就绪（/world/$WORLD/create）..."
-    for t in $(seq 1 60); do
+    for t in $(seq 1 90); do
         if timeout 5 gz service -l 2>/dev/null | grep -q "/world/$WORLD/create"; then
             echo "[sim] Gazebo 世界已就绪（第 $t 次探测）"
             return 0
         fi
         sleep 2
     done
-    echo "[sim] 警告：等待世界就绪超时，继续启动（后续实例可能缺机）"
+    echo "[sim] 警告：等待世界就绪超时，仍继续启动（standalone 实例会自行重试创建请求）"
     return 1
 }
 
-# 确认某实例的模型真的出现在世界中
-wait_model_spawned() {
-    for t in $(seq 1 20); do
-        if timeout 5 gz model -m "$1" >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep 2
-    done
-    return 1
+# 用世界 pose 信息流确认某模型真实出现在世界中（一条 Pose_V 消息
+# 即包含当前世界全部模型；找不到则 8 秒后超时返回失败）
+model_in_world() {
+    timeout 8 gz topic -e -t "/world/$WORLD/pose/info" -n 1 2>/dev/null \
+        | grep -q "name: \"$1\""
 }
 
-start_instance() {
+start_uav() {
     local i="$1"
     local POSE="${SPAWN_POSES[$((i-1))]:-0,0}"
-    if [ "$i" -eq 1 ]; then
-        echo "[sim] 启动实例 $i（含 gz-server，世界 $WORLD），出生点 ENU($POSE)"
-        PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
-            "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
-    else
-        echo "[sim] 启动实例 $i（standalone），出生点 ENU($POSE)"
-        PX4_GZ_STANDALONE=1 PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
-            "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
-    fi
+    echo "[sim] 启动实例 $i（standalone），出生点 ENU($POSE)"
+    PX4_GZ_STANDALONE=1 PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
+        "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
+    UAV_PID[$i]=$!
     PIDS+=($!)
 }
 
-MODEL_BASE="${MODEL#gz_}"           # gz_x500 -> x500（Gazebo 世界中的模型名前缀）
+# ---- 1. 启动 Gazebo（server + GUI），与 PX4 实例完全解耦 ----
+echo "[sim] 启动 gz-server（世界 $WORLD）..."
+gz sim -r -s "$WORLD_SDF" > /tmp/gz_server.log 2>&1 &
+PIDS+=($!)
+if [ -z "$HEADLESS" ]; then
+    gz sim -g > /tmp/gz_gui.log 2>&1 &
+    PIDS+=($!)
+fi
 
-# 实例 1（连带启动 gz-server），先等世界加载完成
-start_instance 1
+# ---- 2. 等待世界就绪 ----
 wait_world_ready
 
-# 逐台确认各实例模型加载成功；standalone 实例加载失败时杀掉重启重试
+# ---- 3. 错峰启动全部 standalone PX4 实例 ----
 for i in $(seq 1 "$NUM_UAVS"); do
-    MN="${MODEL_BASE}_$i"           # 如 x500_2
-    if [ "$i" -gt 1 ]; then
-        start_instance "$i"
-    fi
-    ok=0
-    for attempt in 1 2 3; do
-        if wait_model_spawned "$MN"; then
-            echo "[sim] 实例 $i 模型 $MN 已加载"
-            ok=1
-            break
+    start_uav "$i"
+    sleep 5          # 错峰，减轻 gz-server 瞬时压力
+done
+
+# ---- 4. 看门狗：确认各机模型加载；只重启"进程已死且模型未出现"的实例 ----
+echo "[sim] 看门狗：等待全部 $NUM_UAVS 台模型加载..."
+for round in $(seq 1 40); do
+    all_ok=1
+    for i in $(seq 1 "$NUM_UAVS"); do
+        MN="${MODEL_BASE}_$i"
+        if model_in_world "$MN"; then
+            continue
         fi
-        if [ "$i" -eq 1 ] || [ "$attempt" -ge 3 ]; then
-            break    # 实例 1 自带世界不重试；其余实例最多重试 3 次
+        all_ok=0
+        if ! kill -0 "${UAV_PID[$i]}" 2>/dev/null; then
+            echo "[sim] 实例 $i 进程已退出且模型 $MN 未出现，重启该实例..."
+            start_uav "$i"
         fi
-        echo "[sim] 实例 $i 模型 $MN 未出现，重启该实例重试（第 $attempt 次）..."
-        kill "${PIDS[-1]}" 2>/dev/null || true
-        unset 'PIDS[-1]'
-        sleep 3
-        start_instance "$i"
     done
-    if [ "$ok" -eq 0 ]; then
-        echo "[sim] 警告：实例 $i 模型 $MN 未加载成功（日志 /tmp/px4_instance_$i.log）"
+    [ "$all_ok" -eq 1 ] && break
+    sleep 3
+done
+
+# ---- 5. 汇总各机加载结果 ----
+missing=0
+for i in $(seq 1 "$NUM_UAVS"); do
+    MN="${MODEL_BASE}_$i"
+    if model_in_world "$MN"; then
+        echo "[sim]   uav$i：模型 $MN 已加载"
+    else
+        echo "[sim]   uav$i：模型 $MN 未加载（日志 /tmp/px4_instance_$i.log）"
+        missing=$((missing+1))
     fi
 done
 
@@ -184,10 +205,14 @@ MicroXRCEAgent udp4 -p 8888 &
 PIDS+=($!)
 
 echo ""
-echo "[sim] 4 机仿真启动流程结束（各机加载情况见上方日志）。PX4 日志：/tmp/px4_instance_*.log"
+if [ "$missing" -eq 0 ]; then
+    echo "[sim] $NUM_UAVS 机仿真启动完成，全部模型已确认加载。"
+else
+    echo "[sim] 仿真启动结束，但有 $missing 台未加载（见上方汇总与各机日志 /tmp/px4_instance_*.log）。"
+fi
 echo "[sim] 验证：ros2 topic list | grep px4_"
 echo "[sim] 另开终端执行任务：./scripts/run_swarm.sh"
 echo "[sim] Ctrl+C 或 ./scripts/stop_sim.sh 结束仿真"
 
-trap 'echo; echo "[sim] 正在结束仿真..."; kill "${PIDS[@]}" 2>/dev/null; pkill -f "px4_sitl" 2>/dev/null; exit 0' INT TERM
+trap 'echo; echo "[sim] 正在结束仿真..."; kill "${PIDS[@]}" 2>/dev/null; pkill -f "px4_sitl" 2>/dev/null; pkill -f "gz-sim" 2>/dev/null; pkill -f "gz sim" 2>/dev/null; exit 0' INT TERM
 wait
