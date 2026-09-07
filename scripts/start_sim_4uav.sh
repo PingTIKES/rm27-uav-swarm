@@ -104,6 +104,17 @@ if [ "$WORLD" != "default" ]; then
         fi
         mkdir -p "$PX4_DIR/Tools/simulation/gz/models"
         cp -ru "$WS_DIR/worlds/models/." "$PX4_DIR/Tools/simulation/gz/models/"
+        # 场地网格按内容强制同步：cp -u 只比 mtime，手动替换进去的旧
+        # 时间戳文件会被静默跳过，导致 Gazebo 仍加载旧的带墙网格
+        STL_SRC="$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
+        STL_DST="$PX4_DIR/Tools/simulation/gz/models/rmuc_2025/meshes/rmuc_2025.stl"
+        if [ -f "$STL_SRC" ] && ! cmp -s "$STL_SRC" "$STL_DST"; then
+            cp -f "$STL_SRC" "$STL_DST"
+            echo "[sim] 检测到场地网格内容有变化，已强制同步 -> $STL_DST"
+        fi
+        if [ -f "$STL_SRC" ]; then
+            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d）"
+        fi
         export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:${GZ_SIM_RESOURCE_PATH:-}"
         echo "[sim] 已安装场地模型 -> $PX4_DIR/Tools/simulation/gz/models/"
         # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用）
