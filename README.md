@@ -210,7 +210,9 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > `scripts/start_sim_4uav.sh` 的 `SPAWN_POSES`（ENU）、`params.yaml` 的
 > `spawn_offsets`（NED）、launch 文件中的 `SPAWN_OFFSETS_NED`（NED）。
 > > >
-> 想回到上一版的简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`；
+> 想回到上一版的简化几何场地（2 m 围挡）：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`，
+> 并把 `params.yaml` 的 `map_file` 改为 `'builtin'`（强制内置解析障碍，避免误用真实场地栅格）
+> 后重新 `colcon build`；
 > 想用 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
 > >
 > **关于 rmu_gazebo_simulator 的说明**：该仿真器基于 Ignition Gazebo Fortress
@@ -298,6 +300,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 
 | 现象 | 原因与处理 |
 | --- | --- |
+| launch 全部节点报 `ModuleNotFoundError: No module named 'px4_msgs'` | px4_msgs 没编译进本工作空间（新克隆未跑 setup_env.sh，或 install 被清过）：确认 `third_party/px4_msgs` 存在（没有就先 `./setup_env.sh`），然后 `source /opt/ros/humble/setup.bash && colcon build --packages-select px4_msgs && colcon build --packages-up-to uav_bringup uav_swarm && source install/setup.bash` |
 | 编译 Agent 报「无效引用：2.12.x」 | v2.4.2 依赖的 Fast-DDS 分支已被官方删除：`git checkout v2.4.3` 后删 `build/` 重新编译（setup_env.sh 已修复） |
 | `ros2 topic list` 没有 px4 话题 | Agent 没连上：看终端 A 输出；`tail /tmp/px4_instance_1.log` 查 PX4 日志 |
 | 飞机不起飞、卡在 ARMING | 心跳没通：确认 launch 是在 `start_sim_4uav.sh` **之后**启动；检查 offboard 心跳频率是否 ≈10 Hz |
