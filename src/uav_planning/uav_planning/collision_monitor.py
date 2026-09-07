@@ -35,7 +35,11 @@ class CollisionMonitor(Node):
         super().__init__('collision_monitor')
 
         self.declare_parameter('num_uavs', 4)
-        self.declare_parameter('spawn_spacing', 2.0)
+        self.declare_parameter('spawn_spacing', 2.0)        # 兼容旧的一字排开出生点
+        # 各机出生点偏移（公共系 NED，扁平化 [x1,y1, x2,y2, ...]），
+        # 需与 swarm_coordinator 及 start_sim_4uav.sh 保持一致
+        self.declare_parameter('spawn_offsets',
+                               [9.4, 1.3, 9.4, -1.3, 11.6, 1.3, 11.6, -1.3])
         self.declare_parameter('warn_dist', 1.5)
         self.declare_parameter('crit_dist', 0.8)
         self.declare_parameter('escape_dist', 1.0)
@@ -45,7 +49,13 @@ class CollisionMonitor(Node):
         self.warn_dist = float(self.get_parameter('warn_dist').value)
         self.crit_dist = float(self.get_parameter('crit_dist').value)
         self.escape_dist = float(self.get_parameter('escape_dist').value)
-        self.spawn_offset = {i: (0.0, (i - 1) * spacing) for i in range(1, self.n + 1)}
+        flat = list(self.get_parameter('spawn_offsets').value)
+        if len(flat) >= 2 * self.n:
+            self.spawn_offset = {i: (flat[2 * (i - 1)], flat[2 * (i - 1) + 1])
+                                 for i in range(1, self.n + 1)}
+        else:
+            self.spawn_offset = {i: (0.0, (i - 1) * spacing)
+                                 for i in range(1, self.n + 1)}
 
         self.pos = {}
         qos = px4_qos()

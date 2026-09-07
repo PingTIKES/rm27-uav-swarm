@@ -9,8 +9,9 @@
   LAND          —— 到位后向各机下发 land 指令
   DONE
 
-坐标：公共坐标系 = 各机本地 NED + 出生点偏移（y 东向间隔 2 m，与
-scripts/start_sim_4uav.sh 的 PX4_GZ_MODEL_POSE 对应）。下发给某机的航点会
+坐标：公共坐标系 = 各机本地 NED + 出生点偏移（spawn_offsets，与
+scripts/start_sim_4uav.sh 的 PX4_GZ_MODEL_POSE 一一对应，注意
+PX4 gz_bridge 的换算 NED=(enu_y, enu_x)）。下发给某机的航点会
 自动减去该机的出生点偏移，转换到其本地系。
 """
 
@@ -42,9 +43,15 @@ class SwarmCoordinator(Node):
 
         # ---- 参数 ----
         self.declare_parameter('num_uavs', 4)
-        self.declare_parameter('spawn_spacing', 2.0)        # 出生点东向间隔 m
+        self.declare_parameter('spawn_spacing', 2.0)        # 兼容旧的一字排开出生点
+        # 各机出生点偏移（公共系 NED，扁平化 [x1,y1, x2,y2, ...]），
+        # 与 scripts/start_sim_4uav.sh 的 SPAWN_POSES 对应；
+        # 长度不足 2*num_uavs 时回退为 (0, (i-1)*spawn_spacing) 一字排开
+        self.declare_parameter('spawn_offsets',
+                               [9.4, 1.3, 9.4, -1.3, 11.6, 1.3, 11.6, -1.3])
         # 搜索区域（公共系 NED）：x∈[x0,x1], y∈[y0,y1]
-        self.declare_parameter('search_area', [10.0, -1.0, 22.0, 7.0])
+        # 默认覆盖 RM2025 赛场中场至红方半场
+        self.declare_parameter('search_area', [-10.0, -6.0, 8.0, 6.0])
         self.declare_parameter('lawnmower_step', 2.0)       # 割草机航线间距 m
         self.declare_parameter('base_alt', 2.0)             # 最低搜索高度 m
         self.declare_parameter('alt_layer', 0.5)            # 相邻机高度层差 m
@@ -60,8 +67,15 @@ class SwarmCoordinator(Node):
         self.converge_time = float(self.get_parameter('converge_time').value)
         self.wp_timeout = float(self.get_parameter('wp_timeout').value)
 
-        # 出生点偏移（公共系 = 本地系 + 偏移），i 号机偏移 (0, (i-1)*spacing)
-        self.spawn_offset = {i: (0.0, (i - 1) * self.spacing) for i in range(1, self.n + 1)}
+        # 出生点偏移（公共系 = 本地系 + 偏移）
+        flat = list(self.get_parameter('spawn_offsets').value)
+        if len(flat) >= 2 * self.n:
+            self.spawn_offset = {i: (flat[2 * (i - 1)], flat[2 * (i - 1) + 1])
+                                 for i in range(1, self.n + 1)}
+        else:
+            self.get_logger().warn('spawn_offsets 长度不足，回退为一字排开')
+            self.spawn_offset = {i: (0.0, (i - 1) * self.spacing)
+                                 for i in range(1, self.n + 1)}
         # 各机搜索高度（NED z，负值），逐层抬升
         self.uav_alt = {i: -(self.base_alt + (i - 1) * self.alt_layer)
                         for i in range(1, self.n + 1)}
@@ -93,7 +107,9 @@ class SwarmCoordinator(Node):
         self.converge_start = None
 
         self.timer = self.create_timer(0.2, self._tick)  # 5 Hz 调度
-        self.get_logger().info(f'集群调度就绪：{self.n} 机，搜索区域 {self.area}')
+        self.get_logger().info(
+            f'集群调度就绪：{self.n} 机，搜索区域 {self.area}，'
+            f'出生点 {[self.spawn_offset[i] for i in range(1, self.n + 1)]}')
 
     # ---------------- 回调 ----------------
     def _make_state_cb(self, i):

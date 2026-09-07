@@ -9,6 +9,9 @@
           uav_perception/sim_target_detector（仿真目标检测）
     集群：uav_swarm/swarm_coordinator（分区搜索/汇聚/返航）
           uav_planning/collision_monitor（机间防碰监视）
+
+出生点：SPAWN_OFFSETS_NED 必须与 scripts/start_sim_4uav.sh 的
+SPAWN_POSES（ENU）对应，换算关系 NED = (enu_y, enu_x)。
 """
 import os
 
@@ -18,6 +21,14 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+# 各机出生点（公共系 NED）：蓝方基地启动区四周
+SPAWN_OFFSETS_NED = [
+    [9.4, 1.3],    # uav1 <- ENU "1.3,9.4"
+    [9.4, -1.3],   # uav2 <- ENU "-1.3,9.4"
+    [11.6, 1.3],   # uav3 <- ENU "1.3,11.6"
+    [11.6, -1.3],  # uav4 <- ENU "-1.3,11.6"
+]
+
 
 def _setup(context, *args, **kwargs):
     num_uavs = int(LaunchConfiguration('num_uavs').perform(context))
@@ -26,6 +37,11 @@ def _setup(context, *args, **kwargs):
 
     params_file = os.path.join(
         get_package_share_directory('uav_bringup'), 'config', 'params.yaml')
+
+    def offset_of(i):
+        if i <= len(SPAWN_OFFSETS_NED):
+            return SPAWN_OFFSETS_NED[i - 1]
+        return [0.0, (i - 1) * spacing]  # 超出 4 机时一字排开兜底
 
     nodes = []
     for i in range(1, num_uavs + 1):
@@ -52,7 +68,7 @@ def _setup(context, *args, **kwargs):
                 namespace=f'uav{i}',
                 parameters=[params_file, {
                     'px4_ns': f'px4_{i}',
-                    'spawn_offset': [0.0, (i - 1) * spacing],
+                    'spawn_offset': offset_of(i),
                 }],
                 output='screen',
             ))
