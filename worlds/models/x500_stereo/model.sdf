@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  x500_stereo：x500 + 前置双目相机（OpenVINS 仿真测试变体）
+
+  与 PX4 自带 x500 完全一致（merge 引用 model://x500），额外挂载
+  stereo_cam 双目模型，挂载方式与 PX4 官方 x500_depth 挂 OakD-Lite
+  的模式相同。飞控侧无需任何改动：仍用 gz_x500 对应的 airframe 4001，
+  PX4 的 gz_bridge 照常订阅 base_link 下的 IMU（本模型不改任何原有部件）。
+
+  用法（只给 1 号机挂双目，其余机仍是普通 x500，减轻渲染压力）：
+    VIO_UAV=1 ./scripts/start_sim_4uav.sh
+-->
+<sdf version='1.9'>
+  <model name='x500_stereo'>
+    <include merge='true'>
+      <uri>model://x500</uri>
+    </include>
+    <include merge='true'>
+      <uri>model://stereo_cam</uri>
+      <!-- 模型系原点比 base_link 低 0.24m：z=0.18 = base_link 系下 -0.06 -->
+      <pose>0.17 0 0.18 0 0 0</pose>
+    </include>
+    <joint name="StereoJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>stereo_cam/base_link</child>
+      <pose relative_to="base_link">0.17 0 -0.06 0 0 0</pose>
+    </joint>
+  </model>
+</sdf>
