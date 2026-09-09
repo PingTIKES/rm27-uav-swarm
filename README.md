@@ -133,12 +133,15 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 仿真中这套逻辑由 swarm_coordinator 的 FSM 等价实现；上实机时用 C++ 注册
 各 Action/Condition 节点（`mission_control.cpp`）即可替换，CMakeLists 中已预留编译位置。
 
-### 2.7 uav_localization —— OpenVINS 视觉定位（实机）
+### 2.7 uav_localization —— OpenVINS 视觉定位（实机 + 仿真测试）
 
-仿真用 PX4 EKF2+GPS 定位，**不需要本包**；实机无 GPS 环境下启用。
+实机无 GPS 环境下启用（仿真默认仍用 PX4 EKF2+GPS，OpenVINS 仅作测试）。
 `openvins_params.yaml` 已按框架第 7 节预设：640×400 双目、特征点 ≤150、
 输出 20 Hz、关闭回环，Kalibr 标定结果直接填入。输出 `/uavN/odom` 转
 `vehicle_visual_odometry` 喂给飞控 EKF2 融合（飞控参数 `EKF2_EV_CTRL=15`）。
+
+仿真测试链路（`x500_stereo` 双目模型 + ros_gz_bridge + OpenVINS 仿真配置 +
+精度评估脚本）已内置，用法见第 3 节「附加玩法：OpenVINS 双目 VIO 仿真测试」。
 
 ### 2.8 uav_bringup —— 启动与参数（总开关）
 
@@ -258,7 +261,8 @@ ros2 topic list | grep px4_
 ### 第 4 步：观察预期行为
 
 4 架 x500 依次解锁 → 爬升到 2.0/2.5/3.0/3.5 m 分层高度 →
-各自飞向分到的条带做割草机搜索（范围 NED x∈[-10,8]，y∈[-6,6]，覆盖中场至红方半场）→
+各自飞向分到的条带做割草机搜索（范围 NED x∈[-10,8]，y∈[-6,6]，
+覆盖中场至红方半场）→
 飞到绿色目标柱（NED (-9, 2)）附近的飞机"发现"目标 →
 四机汇聚盘旋 15 秒 → 各自返回出生停机坪上空 → 降落上锁 → 终端打印"任务结束"。
 
@@ -287,6 +291,69 @@ ros2 launch uav_bringup goal_nav.launch.py uav_id:=3    # 打点控制 3 号机
 - 调地图：`src/uav_planning/uav_planning/field_map.py`（分辨率/膨胀/障碍清单）
 - 实机演进：把 field_map 的障碍来源换成 D430i 深度点云局部建图，
   goal_planner 的接口（/goal_pose 进、/uavN/waypoint 出）完全不用动
+
+### 附加玩法：OpenVINS 双目 VIO 仿真测试
+
+在仿真里跑通"双目图像 + IMU → OpenVINS → 里程计 → 与真值对比"的完整链路，
+为实机 D430i 无 GPS 定位做参数预演。原理与输入输出见第 2.7 节。
+
+**一次性安装**（只做一次）：
+
+```bash
+# 1) gz->ROS2 桥：Humble+Garden 组合的二进制包在 OSRF 源
+#    （若已添加过 packages.osrfoundation.org 源直接 apt；否则源码编译
+#      ros_gz，编译前 export GZ_VERSION=garden）
+sudo apt install ros-humble-ros-gzgarden
+
+# 2) OpenVINS 本体（第三方库，独立工作空间编译，不放进 uav_ws）
+mkdir -p ~/catkin_ws_ov/src && cd ~/catkin_ws_ov/src
+git clone https://github.com/rpng/open_vins/
+cd ~/catkin_ws_ov && colcon build --packages-select ov_core ov_init ov_msckf ov_eval
+source ~/catkin_ws_ov/install/setup.bash
+# 若编译报 image_transport.h / tf2_geometry_msgs.h deprecated 错误：
+# 把 ov_msckf/src/ros/ROS2Visualizer.h 与 ROSVisualizerHelper.h 中
+# 对应三个 #include 换成 .hpp 版本即可（上游已知问题）
+```
+
+**运行**（三个终端）：
+
+```bash
+# 终端 A：VIO 模式起仿真（1 号机自动换 x500_stereo 双目模型，其余机不变）
+VIO_UAV=1 ./scripts/start_sim_4uav.sh
+
+# 终端 B：桥接 + OpenVINS（自动读取仿真分区、检查依赖、等相机就绪）
+./scripts/run_openvins_sim.sh
+
+# 终端 C：精度评估（OpenVINS 轨迹 vs PX4 SITL 本地位置≈真值，自动对齐后报漂移）
+ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
+```
+
+**操作顺序**：仿真加载完成后先让 1 号机在停机坪**静置约 3 秒**，
+终端 B 出现 `Initialized` 再起飞（静止初始化）；之后正常打点或集群飞行，
+终端 C 每 5 秒报告一次水平/3D RMSE 与漂移百分比。RViz 可加
+`/uav1/trackhist`（特征跟踪图）与 `/uav1/points_msckf`（三角化特征点云）。
+
+**仿真部件与参数对应关系**（改相机参数时三处必须同步）：
+
+| 内容 | 文件 |
+|---|---|
+| 双目传感器（640×480@30 灰度、基线 50mm、hfov 87°、挂点 base_link (0.17,0,-0.06)） | `worlds/models/stereo_cam/model.sdf` |
+| x500 双目变体（merge x500 + 挂 stereo_cam） | `worlds/models/x500_stereo/model.sdf` |
+| OpenVINS 估计器参数（特征 150、max_clones 11、静止初始化等） | `src/uav_localization/config/openvins_sim/estimator_config.yaml` |
+| IMU 噪声（由 x500_base 的 SDF 噪声换算） | `.../openvins_sim/kalibr_imu_chain.yaml` |
+| 相机内外参（fx=fy=337.22、T_imu_cam 与挂点严格对应） | `.../openvins_sim/kalibr_imucam_chain.yaml` |
+
+**排错**：
+
+- 桥接报 `Unable to find topic` / 终端 B 一直等相机：仿真是普通模式起的
+  （没加 `VIO_UAV=1`），或终端 B 与仿真不在同一 `GZ_PARTITION`
+  （`run_openvins_sim.sh` 会自动 source `/tmp/rm27_gz_env.sh`，手动调试时别忘了）
+- OpenVINS 终端刷 `cv_bridge exception`：相机像素格式不匹配，stereo_cam
+  用的是 `L8_INT8`（桥接后为 mono8），改过相机格式的话同步改回
+- 一直不初始化：飞机没静置/图像全黑（GUI 里 Topic Visualization 选
+  `/vio_cam0/image` 检查画面）；场地纹理少属于正常，CLAHE 已开
+- 轨迹飘得离谱：先核对 `kalibr_imucam_chain.yaml` 的 `T_imu_cam` 是否与
+  stereo_cam/model.sdf 的挂点一致（两处必须同步改）
 
 ## 4. 运行中调试命令
 
