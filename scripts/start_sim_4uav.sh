@@ -20,6 +20,11 @@
 #   - 回到 2025 场地：PX4_WORLD=rmuc_2025_field ./start_sim_4uav.sh
 #   - 回到简化几何场地：PX4_WORLD=rm2025_field ./start_sim_4uav.sh
 #
+# OpenVINS 仿真测试（双目 VIO）：
+#   VIO_UAV=1 ./start_sim_4uav.sh  —— 1 号机改用 x500_stereo 模型
+#   （前置双目 640x480@30 灰度，其余机不变；飞控侧无需任何改动）。
+#   仿真起来后再另开终端执行 ./scripts/run_openvins_sim.sh
+#
 # 坐标换算（PX4 gz_bridge）：NED = (enu_y, enu_x, -enu_z)
 #   即出生点 ENU "(ex, ey)" 对应公共系 NED "(ey, ex)"，
 #   与 params.yaml 中 swarm_coordinator.spawn_offsets 一一对应。
@@ -68,6 +73,7 @@ PX4_BIN="$PX4_DIR/build/px4_sitl_default/bin/px4"
 MODEL="${PX4_MODEL:-gz_x500}"        # 可换 gz_x500_depth 等带相机模型
 AUTOSTART=4001                        # gz_x500 对应 airframe
 WORLD="${PX4_WORLD:-rmuc_2027_field}" # 2025 场地：PX4_WORLD=rmuc_2025_field；简化场地：rm2025_field；空场地：default
+VIO_UAV="${VIO_UAV:-0}"               # >0 时该号机改用 gz_x500_stereo（前置双目，OpenVINS 测试用）
 
 # 工作空间根目录（本脚本位于 <ws>/scripts/）
 WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -179,6 +185,7 @@ echo "export GZ_PARTITION=$GZ_PARTITION" > /tmp/rm27_gz_env.sh
 cd "$PX4_DIR"
 PIDS=()
 declare -A UAV_PID=()                 # 实例号 -> PX4 进程号（看门狗用）
+declare -A UAV_MODEL_BASE=()          # 实例号 -> 模型名前缀（VIO 机为 x500_stereo）
 MODEL_BASE="${MODEL#gz_}"             # gz_x500 -> x500（Gazebo 世界中的模型名前缀）
 WORLD_SDF="$PX4_DIR/Tools/simulation/gz/worlds/$WORLD.sdf"
 
@@ -211,8 +218,15 @@ model_in_world() {
 start_uav() {
     local i="$1"
     local POSE="${SPAWN_POSES[$((i-1))]:-0,0}"
+    # VIO 测试：仅指定号机换用带前置双目的 x500_stereo（airframe 不变）
+    local M="$MODEL"
+    if [ "$VIO_UAV" = "$i" ]; then
+        M="gz_x500_stereo"
+        echo "[sim] 实例 $i 使用双目模型 x500_stereo（OpenVINS 测试）"
+    fi
+    UAV_MODEL_BASE[$i]="${M#gz_}"
     echo "[sim] 启动实例 $i（standalone），出生点 ENU($POSE)"
-    PX4_GZ_STANDALONE=1 PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$MODEL PX4_GZ_MODEL_POSE="$POSE" \
+    PX4_GZ_STANDALONE=1 PX4_SYS_AUTOSTART=$AUTOSTART PX4_SIM_MODEL=$M PX4_GZ_MODEL_POSE="$POSE" \
         "$PX4_BIN" -i "$i" > "/tmp/px4_instance_$i.log" 2>&1 &
     UAV_PID[$i]=$!
     PIDS+=($!)
@@ -289,7 +303,7 @@ for round in $(seq 1 40); do
     kill -0 "$GZ_SERVER_PID" 2>/dev/null || server_dead_abort
     all_ok=1
     for i in $(seq 1 "$NUM_UAVS"); do
-        MN="${MODEL_BASE}_$i"
+        MN="${UAV_MODEL_BASE[$i]:-$MODEL_BASE}_$i"
         if model_in_world "$MN"; then
             continue
         fi
@@ -306,7 +320,7 @@ done
 # ---- 5. 汇总各机加载结果 ----
 missing=0
 for i in $(seq 1 "$NUM_UAVS"); do
-    MN="${MODEL_BASE}_$i"
+    MN="${UAV_MODEL_BASE[$i]:-$MODEL_BASE}_$i"
     if model_in_world "$MN"; then
         echo "[sim]   uav$i：模型 $MN 已加载"
     else
@@ -331,6 +345,10 @@ echo "[sim] 另开终端执行任务：./scripts/run_swarm.sh"
 echo "[sim] Ctrl+C 或 ./scripts/stop_sim.sh 结束仿真"
 echo "[sim] 别的终端手动用 gz topic/gz service 调试前，先执行：source /tmp/rm27_gz_env.sh"
 echo "[sim] 如遇界面空白/缺机等异常，请把 /tmp/gz_server.log /tmp/gz_gui.log /tmp/px4_instance_*.log 发出来"
+if [ "$VIO_UAV" -gt 0 ] 2>/dev/null; then
+    echo "[sim] VIO 测试模式：uav$VIO_UAV 为 x500_stereo，相机话题 /vio_cam0/image /vio_cam1/image"
+    echo "[sim] 启动 OpenVINS 链路：另开终端执行 ./scripts/run_openvins_sim.sh"
+fi
 
 # 清理期间屏蔽再次 Ctrl+C，保证强清理完整执行（被打断会留残余进程）
 on_exit() {
