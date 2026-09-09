@@ -56,7 +56,7 @@ class SwarmCoordinator(Node):
         self.declare_parameter('spawn_offsets',
                                [9.4, 1.3, 9.4, -1.3, 11.6, 1.3, 11.6, -1.3])
         # 搜索区域（公共系 NED）：x∈[x0,x1], y∈[y0,y1]
-        # 默认覆盖 RM2025 赛场中场至红方半场
+        # 默认覆盖 RM2027 赛场中场至红方半场
         self.declare_parameter('search_area', [-10.0, -6.0, 8.0, 6.0])
         self.declare_parameter('lawnmower_step', 2.0)       # 割草机航线间距 m
         self.declare_parameter('base_alt', 2.0)             # 最低搜索高度 m
@@ -94,7 +94,7 @@ class SwarmCoordinator(Node):
                 from ament_index_python.packages import get_package_share_directory
                 map_file = os.path.join(
                     get_package_share_directory('uav_planning'),
-                    'maps', 'rmuc_2025_occ.npz')
+                    'maps', 'rmuc_2027_occ.npz')
             except Exception:
                 map_file = ''
         try:

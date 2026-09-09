@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""把 RMUC2025 场地网格（STL）光栅化为二维占据栅格（.npz）。
+"""把 RMUC 场地网格（STL）光栅化为二维占据栅格（.npz）。
 
 用法：
-    python3 tools/rasterize_field.py
+    python3 tools/rasterize_field.py [rmuc_2027|rmuc_2025]   # 默认 rmuc_2027
 
-输入：worlds/models/rmuc_2025/meshes/rmuc_2025.stl
-输出：src/uav_planning/maps/rmuc_2025_occ.npz
+输入：worlds/models/<模型名>/meshes/<模型名>.stl
+输出：src/uav_planning/maps/<模型名>_occ.npz
       （occ[nx,ny] uint8 + x0/y0/res，NED 系，已含 0.5 m 膨胀）
 
 原理：在三角面上按面积采样点云，保留 z ∈ [Z_MIN, Z_MAX]（飞行高度带内
 可能撞到的结构），投影到 NED 平面栅格化，再按机体半径膨胀。
-坐标关系与 worlds/rmuc_2025_field.sdf 中场地 yaw=+90° 一致：
+坐标关系与 worlds/rmuc_2027_field.sdf 中场地 yaw=+90° 一致：
     x_ned = mesh_x，y_ned = -mesh_y
 
 依赖：numpy（膨胀用 scipy；缺 scipy 时退化为纯 numpy 3x3 迭代）。
@@ -18,12 +18,14 @@
 
 import os
 import struct
+import sys
 
 import numpy as np
 
+MODEL = sys.argv[1] if len(sys.argv) > 1 else 'rmuc_2027'
 WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STL = os.path.join(WS, 'worlds', 'models', 'rmuc_2025', 'meshes', 'rmuc_2025.stl')
-OUT = os.path.join(WS, 'src', 'uav_planning', 'maps', 'rmuc_2025_occ.npz')
+STL = os.path.join(WS, 'worlds', 'models', MODEL, 'meshes', MODEL + '.stl')
+OUT = os.path.join(WS, 'src', 'uav_planning', 'maps', MODEL + '_occ.npz')
 
 RES = 0.25          # 栅格分辨率 m
 X0, X1 = -15.0, 15.0   # NED x（北）范围，略大于场地 29.16 m
@@ -62,7 +64,7 @@ def main():
         raise SystemExit(f'未找到场地网格：{STL}\n请先运行 scripts/fetch_field_model.sh')
     np.random.seed(42)   # 固定采样种子，保证地图可复现
     v = load_stl(STL)
-    print(f'三角面数: {len(v)}')
+    print(f'模型: {MODEL}，三角面数: {len(v)}')
 
     # 只保留与高度带相交的三角面，再按面积采样
     zmin, zmax = v[:, :, 2].min(axis=1), v[:, :, 2].max(axis=1)

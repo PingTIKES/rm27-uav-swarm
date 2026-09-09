@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- =====================================================================
+  RMUC2027 赛场世界（适配 PX4 v1.15.4 + gz-garden 四机集群仿真）
+
+  依据《RoboMaster 2027 高校系列赛规则变更前瞻手册》对 2025 场地的修改：
+    - 战场中央原"中央结构"（斜置高塔）已整体推平，改为双方机库：
+      蓝方机库 ENU(0, +0.9)、红方机库 ENU(0, -0.9)，四周为机库放置区
+      （1.8 x 1.2 m 半透明地贴，仅可视化）
+    - 机库为简化模型（worlds/models/hangar）：0.40x0.40x0.20 m 基座
+      + 0.70x0.70 m 降落平台（顶面 z=0.24 m，低于 A* 占据带下限
+      0.35 m，不进入占据栅格，可正常飞越），4 槽位标记 + 中心对位标记
+    - 场地围挡维持 3 m 高（单面网格，已验证不会触发 gz-server 崩溃）
+    - 2027 新规的"隧道""制高点""工作台"暂未建模，后续按需补充
+
+  场地网格：worlds/models/rmuc_2027/meshes/rmuc_2027.stl
+    （在已验证可用的 wall3m 单面网格基础上推平中央结构并补地板，
+      md5 378561b1312fb76ac23e3c55f91b2631，105,696 三角形）
+
+  坐标约定与 2025 世界一致：场地模型 yaw=+90°，网格长轴沿 ENU +y
+  （即公共系 NED 北向），蓝方基地在北端（NED x 正方向）。
+  停机坪、出生点、搜索目标均未改动（用户要求其他暂不修改）。
+  ====================================================================== -->
+<sdf version="1.9">
+  <world name="rmuc_2027_field">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system"/>
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
+    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system"/>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
+    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system"/>
+    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system"/>
+    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system"/>
+    <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <gui fullscreen="false">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <!-- 默认相机：从蓝方基地上空俯瞰全场 -->
+        <camera_pose>3 22 14 0 0.55 -1.5707</camera_pose>
+        <camera_clip>
+          <near>0.25</near>
+          <far>25000</far>
+        </camera_clip>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property type="bool" key="showTitleBar">false</property>
+          <property key="state" type="string">docked</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager"/>
+      <plugin filename="InteractiveViewControl" name="Interactive view control"/>
+      <plugin filename="CameraTracking" name="Camera Tracking"/>
+      <plugin filename="MarkerManager" name="Marker manager"/>
+      <plugin filename="SelectEntities" name="Select Entities"/>
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities"/>
+      <plugin filename="Spawn" name="Spawn Entities"/>
+      <plugin name="World control" filename="WorldControl">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="bool" key="resizable">0</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">121</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>1</play_pause>
+        <step>1</step>
+        <start_paused>1</start_paused>
+      </plugin>
+      <plugin name="World stats" filename="WorldStats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="bool" key="resizable">0</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>1</sim_time>
+        <real_time>1</real_time>
+        <real_time_factor>1</real_time_factor>
+        <iterations>1</iterations>
+      </plugin>
+      <plugin name="Entity tree" filename="EntityTree"/>
+    </gui>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ================= 地面（网格外的兜底平面） ================= -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+            <specular>0.5 0.5 0.5 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <!-- ================= RMUC2027 全场（中央结构已推平） =================
+         yaw=+90°：网格 x 轴（长轴 29.16 m）转到 ENU +y，即 NED 北向。
+         模型文件位于 worlds/models/rmuc_2027/，启动脚本把 worlds/models
+         置于 GZ_SIM_RESOURCE_PATH 最前，model://rmuc_2027 无论什么情况
+         都解析到工作空间这份（meshes/rmuc_2027.stl），不做任何复制。 -->
+    <model name="rmuc_2027">
+      <include>
+        <uri>model://rmuc_2027</uri>
+      </include>
+      <pose>0 0 0 0 0 1.5707963</pose>
+      <static>true</static>
+    </model>
+
+    <!-- ================= 战场中央：双方机库（RM2027 新增） =================
+         机库放置区位于场地中央，蓝方机库靠北（蓝方半场一侧）、
+         红方机库靠南。模型为世界系 ENU 坐标直接放置（不随场地网格旋转）。
+         规则：机库为空中机器人提供起飞与回收，最多容纳 4 架；
+         简化模型顶面 z=0.24 m，可降落、可飞越。 -->
+    <model name="hangar_blue">
+      <include>
+        <uri>model://hangar</uri>
+        <name>hangar_blue</name>
+        <pose>0 0.9 0 0 0 0</pose>
+      </include>
+      <static>true</static>
+    </model>
+    <model name="hangar_red">
+      <include>
+        <uri>model://hangar</uri>
+        <name>hangar_red</name>
+        <pose>0 -0.9 0 0 0 0</pose>
+      </include>
+      <static>true</static>
+    </model>
+
+    <!-- 机库放置区地贴（1.8 x 1.2 m 半透明薄片，仅可视化、无碰撞） -->
+    <model name="hangar_zone_blue">
+      <static>true</static>
+      <pose>0 0.9 0.006 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>1.8 1.2 0.004</size></box></geometry>
+          <material>
+            <ambient>0.1 0.3 0.9 0.45</ambient>
+            <diffuse>0.15 0.4 0.95 0.45</diffuse>
+            <emissive>0.05 0.15 0.5 0.45</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="hangar_zone_red">
+      <static>true</static>
+      <pose>0 -0.9 0.006 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>1.8 1.2 0.004</size></box></geometry>
+          <material>
+            <ambient>0.9 0.1 0.1 0.45</ambient>
+            <diffuse>0.95 0.15 0.15 0.45</diffuse>
+            <emissive>0.5 0.05 0.05 0.45</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= 停机坪（4 个出生点，黄色圆片，仅可视化） ================= -->
+    <!-- pad_i 对应第 i 台无人机出生点（ENU 坐标，与 start_sim_4uav.sh 一致）：
+         uav1 ENU( 1.3,  9.4)  uav2 ENU(-1.3,  9.4)
+         uav3 ENU( 1.3, 11.6)  uav4 ENU(-1.3, 11.6)
+         即公共系 NED (9.4,±1.3) / (11.6,±1.3)，蓝方基地启动区四周
+         （2027 规则无人机应从机库起飞，出生点迁移留待后续任务） -->
+    <model name="pad_1">
+      <static>true</static>
+      <pose>1.3 9.4 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse>
+            <emissive>0.5 0.42 0.05 1</emissive></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_2">
+      <static>true</static>
+      <pose>-1.3 9.4 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse>
+            <emissive>0.5 0.42 0.05 1</emissive></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_3">
+      <static>true</static>
+      <pose>1.3 11.6 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse>
+            <emissive>0.5 0.42 0.05 1</emissive></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pad_4">
+      <static>true</static>
+      <pose>-1.3 11.6 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.35</radius><length>0.01</length></cylinder></geometry>
+          <material><ambient>0.85 0.75 0.1 1</ambient><diffuse>0.95 0.85 0.15 1</diffuse>
+            <emissive>0.5 0.42 0.05 1</emissive></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 搜索目标标记（亮绿色立柱，NED (-9, 2, 0)，与 params.yaml 的
+         target_world 对应；注意核对与真实场地几何是否干涉，可整体挪位） -->
+    <model name="target_marker">
+      <static>true</static>
+      <pose>2.0 -9.0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry></collision>
+        <visual name="visual"><geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.1 0.8 0.2 1</ambient>
+            <diffuse>0.15 0.95 0.25 1</diffuse>
+            <emissive>0.1 0.6 0.15 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

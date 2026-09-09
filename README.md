@@ -21,7 +21,7 @@
 ## 1. 系统总览与数据流
 
 ```
-                 Gazebo 仿真世界（RM2025 赛场，4 架虚拟 x500）
+                 Gazebo 仿真世界（RM2027 赛场，4 架虚拟 x500）
                     │  传感器/电机
         ┌───────────┼───────────┬───────────┐
      PX4 SITL 1  PX4 SITL 2  PX4 SITL 3  PX4 SITL 4     ← 4 个虚拟飞控进程
@@ -91,9 +91,10 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 四机立刻汇聚到目标四周（水平错开 1.5 m、保持各自高度层）盘旋 15 秒
 - **RETURN / LAND**：各机返回出生点上空，到位后统一下发 land 指令
 - **静态避障（A\*）**：每个任务航点（搜索/汇聚/返航）都先经
-`uav_planning.field_map` 在赛场占据栅格（默认 RMUC2025 真实场地离线栅格）
+`uav_planning.field_map` 在赛场占据栅格（默认 RMUC2027 场地离线栅格）
 上规划、视线拉直后拆成子航点依次下发，自动绕开资源岛/高地/环公路高架等
-场地障碍；落入障碍的航点自动吸附到最近自由点。启动日志会打印
+场地障碍（战场中央机库平台顶 0.24 m，低于占据带下限，可正常飞越）；
+落入障碍的航点自动吸附到最近自由点。启动日志会打印
 "A\* 避障已启用，地图来源：…"；uav_planning 不可用时退化为直航并告警
 - **坐标换算**：每机本地坐标原点在自己出生点，调度器内部维护
 "公共坐标系 = 本机坐标 + 出生点偏移"，下发航点时自动减回偏移——调参时只需想公共系
@@ -109,8 +110,8 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
 ### 2.5 uav_planning —— 规划与安全
 
 - `field_map.py`：**赛场占据栅格地图 + A\***（纯算法模块，不依赖 ROS）。
-  默认加载离线栅格 `maps/rmuc_2025_occ.npz`——由 RMUC2025 真实场地网格
-  （`worlds/models/rmuc_2025`，源自 SMBU-PolarBear rmu_gazebo_simulator）
+  默认加载离线栅格 `maps/rmuc_2027_occ.npz`——由 RMUC2027 场地网格
+  （`worlds/models/rmuc_2027`：2025 网格推平中央结构、3 m 单面围挡）
   按 z∈[0.35, 3.8] m 光栅化并膨胀 0.5 m 生成；文件缺失时回退到与简化场地
   `worlds/rm2025_field.sdf` 对应的内置解析障碍。8 连通 A* + 视线拉直平滑。
   实机演进时接口不变，障碍来源换成 D430i 深度点云局部建图即可
@@ -185,10 +186,10 @@ colcon build --packages-up-to uav_bringup uav_swarm
 ./scripts/start_sim_4uav.sh
 ```
 
-脚本依次：把 `worlds/rmuc_2025_field.sdf` 复制进 PX4 的 worlds 目录、把
+脚本依次：把 `worlds/rmuc_2027_field.sdf` 复制进 PX4 的 worlds 目录、把
 `worlds/models/` 置于 `GZ_SIM_RESOURCE_PATH` 最前（场地网格始终直接加载
-工作空间里的 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 这一份，不做任何复制），
-设置 `PX4_GZ_WORLD=rmuc_2025_field` → 清理上一次仿真的
+工作空间里的 `worlds/models/rmuc_2027/meshes/rmuc_2027.stl` 这一份，不做任何复制），
+设置 `PX4_GZ_WORLD=rmuc_2027_field` → 清理上一次仿真的
 残留进程（gz-sim 后端常脱离前台进程组，不清会导致新旧 server 串台、界面空白）→
 直接启动 gz-server / gz-gui（与 PX4 实例完全解耦）→ 轮询等待 Gazebo 世界就绪后
 错峰启动 4 个 standalone PX4 实例（实例内部会无限重试模型创建请求，世界未就绪
@@ -196,11 +197,16 @@ colcon build --packages-up-to uav_bringup uav_swarm
 "进程已退出且模型未出现"的实例，杜绝同名冲突）→ 启动 MicroXRCEAgent
 （udp4:8888，自动接管全部 4 个实例）。
 
-Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 全场网格，
-源自 [SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)，
-已适配 gz-garden 并整体旋转 90° 使长轴沿 NED 北向）：场地两端为红蓝基地，
-中央资源岛/能量机关、环形公路、高地等地形均为真实几何。四架 x500 出生在
-**蓝方基地启动区（NED 中心约 (10.5, 0)）四周的黄色停机坪**上：
+Gazebo 窗口中出现的是 **RMUC2027 赛场模型**（29.2 m × 16.2 m 全场网格，
+在 RMUC2025 网格（源自 [SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)）
+基础上按 2027 规则前瞻改造：中央结构推平，战场中央放置双方机库——
+**蓝方机库 NED (0.9, 0)、红方机库 NED (-0.9, 0)**，各带 1.8×1.2 m 机库放置区地贴；
+机库为简化模型（0.4×0.4×0.2 m 基座 + 0.7×0.7 m 降落平台，顶面 0.24 m，
+4 个槽位标记 + 中心对位标记，可降落、可飞越）；围挡保留 3 m 高单面版；
+隧道/制高点/工作台暂未建模）。场地已整体旋转 90° 使长轴沿 NED 北向，
+两端为红蓝基地。四架 x500 出生在
+**蓝方基地启动区（NED 中心约 (10.5, 0)）四周的黄色停机坪**上
+（2027 规则无人机应从机库起飞，出生点迁移留待后续任务）：
 
 | 无人机 | 公共系 NED 出生点 | Gazebo ENU 出生点 |
 | --- | --- | --- |
@@ -214,21 +220,26 @@ Gazebo 窗口中出现的是 **RMUC2025 真实赛场模型**（29.2 m × 16.2 m 
 > `scripts/start_sim_4uav.sh` 的 `SPAWN_POSES`（ENU）、`params.yaml` 的
 > `spawn_offsets`（NED）、launch 文件中的 `SPAWN_OFFSETS_NED`（NED）。
 > >
-> 想回到上一版的简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`；
+> 想回到 2025 场地：`PX4_WORLD=rmuc_2025_field ./scripts/start_sim_4uav.sh`
+> （同时把 `params.yaml` 的 `map_file` 改为 `rmuc_2025_occ.npz`）；
+> 想回到简化几何场地：`PX4_WORLD=rm2025_field ./scripts/start_sim_4uav.sh`
+> （`map_file` 设为 `builtin`）；
 > 想用 PX4 空场地：`PX4_WORLD=default ./scripts/start_sim_4uav.sh`。
 >
 > **关于 rmu_gazebo_simulator 的说明**：该仿真器基于 Ignition Gazebo Fortress
 > 且面向地面机器人（rmoss 底盘/云台/发射机构插件），PX4 v1.15.4 的 SITL 需要
 > gz-garden，两者不能直接共跑。因此本工作空间采取「取其场地、留我飞控」的方式：
-> 仅复用其 RMUC2025 全场网格模型（`worlds/models/rmuc_2025/`，STL + 模型定义，
-> 原插件均已移除），世界文件 `worlds/rmuc_2025_field.sdf` 按 PX4 官方模板补齐
+> 仅复用其 RMUC2025 全场网格模型（在其基础上改造出 `worlds/models/rmuc_2027/`，
+> 原插件均已移除），世界文件 `worlds/rmuc_2027_field.sdf` 按 PX4 官方模板补齐
 > gz-garden 系统插件（NavSat/AirPressure/ApplyLinkWrench 等）。若你需要他们
 > 的地面对抗逻辑，可用他们的 Docker 镜像单独跑原仿真器。
 >
-> **注意**：Git 仓库不含 5.7 MB 的场地网格二进制（zip 发行包已内含）。
-> clone 后首次 `./scripts/start_sim_4uav.sh` 会自动运行
-> `scripts/fetch_field_model.sh` 下载网格并用 `tools/rasterize_field.py`
-> 重新生成 A* 用的占据栅格（需联网 + numpy，可重复执行）。
+> **注意**：Git 仓库不含场地网格二进制（zip 发行包已内含 rmuc_2027.stl、
+> rmuc_2025.stl 及各变体）。clone 后使用 2025 场地时首次
+> `./scripts/start_sim_4uav.sh` 会自动运行 `scripts/fetch_field_model.sh`
+> 下载网格并用 `tools/rasterize_field.py` 重新生成 A* 用的占据栅格
+> （需联网 + numpy，可重复执行）；2027 网格请从 zip 发行包获取，
+> 或手动重新生成：`python3 tools/rasterize_field.py rmuc_2027`。
 
 **验证**（新开终端）：
 
@@ -303,8 +314,9 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | Gazebo 里飞机数量不够（如只有 1~3 架） | 多为 gz-server 忙时模型创建失败导致 PX4 实例退出：start_sim_4uav.sh 已将 gz-server 与 PX4 解耦——先等世界就绪再错峰启动实例（实例自身无限重试创建请求），看门狗用世界 pose 信息流逐台确认并只重启已退出的实例；仍缺机时看终端 A 的 [sim] 汇总和 /tmp/px4_instance_N.log（勿用"杀掉重启"式脚本：PX4 禁止同名模型，撞名会让实例直接退出） |
 | 第二次启动 Gazebo 空白/没有场地 | 上一次仿真没退干净（除 gz-sim 后端外，官方确认 `gz sim -g` 的 ruby 启动器/GUI 也会残留），新旧 server 同时在线导致服务发现串台：start_sim_4uav.sh 启动前按 `gz[- ]sim` 统一匹配强清理，且每轮仿真用唯一 GZ_PARTITION 隔离（残留杀不净也不串台）；手动清理用 `./scripts/stop_sim.sh` 或 `pkill -9 -f "gz[- ]sim"`；仍空白请带上 /tmp/gz_server.log 与 /tmp/gz_gui.log 排查 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
-| Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
-| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：确认 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 存在（缺失时脚本会自动下载）；Gazebo 直接加载工作空间这份文件，启动日志会打印其 md5（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d），更换网格后无需任何同步操作 |
+| Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2027_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
+| 终端报「已中止 (核心已转储) gz sim -r -s」、只剩 1 架飞机 | gz-server 进程崩溃（只剩最先落场的一台；standalone 实例对死掉的服务器无限重试，看门狗等不到）：诱因多为场地网格的退化三角形或双面化重合三角形（同点重复接触）触发 ODE 碰撞断言。网格变体（`worlds/models/rmuc_2025/meshes/`，复制覆盖 `rmuc_2025.stl` 即生效，启动日志会打印 md5 供核对）：**`rmuc_2025_wall3m.stl`**（3 m 围墙+单面+退化已清洗，md5 `19079837e87223fcc745de9620966053`，最稳妥，需同步 `cp src/uav_planning/maps/rmuc_2025_occ_wall3m.npz src/uav_planning/maps/rmuc_2025_occ.npz`）；`rmuc_2025_nowall_single.stl`（无墙+单面+已清洗，`c921c14152647f537d30f774f87c7ac8`，占据栅格沿用默认 npz）；默认 `rmuc_2025.stl`（无墙+双面+已清洗，`fa41fd76e66492d8c87762355f461977`）。2027 默认场地网格 `rmuc_2027.stl` 直接由 wall3m 单面版改造（中央推平+补地板），天然免疫此问题。新版脚本会立即检测服务器猝死并退出提示；仍崩溃请执行 `tail -n 50 /tmp/gz_server.log` 把日志发出来 |
+| 场地模型缺失（世界只有几个停机坪/机库/目标柱） | 场地网格没装上：确认 `worlds/models/rmuc_2027/meshes/rmuc_2027.stl` 存在（md5 应为 `378561b1312fb76ac23e3c55f91b2631`，zip 发行包已内含）；Gazebo 直接加载工作空间这份文件，启动日志会打印其 md5。2025 场地同理（`worlds/models/rmuc_2025/meshes/rmuc_2025.stl`，缺失时脚本会自动下载），更换网格后无需任何同步操作 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |

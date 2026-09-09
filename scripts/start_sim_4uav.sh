@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================
-# 启动 4 机 PX4 SITL + Gazebo(RM2025 赛场) + MicroXRCEAgent
+# 启动 4 机 PX4 SITL + Gazebo(RM2027 赛场) + MicroXRCEAgent
 #
 # 架构（PX4 官方多机仿真的解耦版）：
 #   - 本脚本直接启动 gz-server / gz-gui，再启动 NUM_UAVS 个
@@ -11,12 +11,14 @@
 #   - 单个 MicroXRCEAgent 自动接入全部实例
 #   - 话题命名空间自动为 /px4_1 .. /px4_4
 #
-# 赛场说明（worlds/rmuc_2025_field.sdf）：
-#   - RMUC2025 真实赛场网格（源自 SMBU-PolarBear rmu_gazebo_simulator），
+# 赛场说明（worlds/rmuc_2027_field.sdf）：
+#   - RMUC2027 赛场（2025 网格推平中央结构 + 战场中央双方机库），
 #     长轴沿 NED 北向（Gazebo ENU +y）
 #   - 蓝方基地在北端（NED x≈+13），其前方 NED (10.5, 0) 为基地启动区
-#   - 4 台无人机出生在启动区四周的停机坪上（见 SPAWN_POSES）
-#   - 想回到简化几何场地：PX4_WORLD=rm2025_field ./start_sim_4uav.sh
+#   - 4 台无人机出生在启动区四周的停机坪上（见 SPAWN_POSES；
+#     2027 规则应从机库起飞，出生点迁移留待后续）
+#   - 回到 2025 场地：PX4_WORLD=rmuc_2025_field ./start_sim_4uav.sh
+#   - 回到简化几何场地：PX4_WORLD=rm2025_field ./start_sim_4uav.sh
 #
 # 坐标换算（PX4 gz_bridge）：NED = (enu_y, enu_x, -enu_z)
 #   即出生点 ENU "(ex, ey)" 对应公共系 NED "(ey, ex)"，
@@ -65,7 +67,7 @@ PX4_DIR="${PX4_DIR:-$HOME/PX4-Autopilot}"
 PX4_BIN="$PX4_DIR/build/px4_sitl_default/bin/px4"
 MODEL="${PX4_MODEL:-gz_x500}"        # 可换 gz_x500_depth 等带相机模型
 AUTOSTART=4001                        # gz_x500 对应 airframe
-WORLD="${PX4_WORLD:-rmuc_2025_field}" # 简化场地：PX4_WORLD=rm2025_field；空场地：default
+WORLD="${PX4_WORLD:-rmuc_2027_field}" # 2025 场地：PX4_WORLD=rmuc_2025_field；简化场地：rm2025_field；空场地：default
 
 # 工作空间根目录（本脚本位于 <ws>/scripts/）
 WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -99,43 +101,64 @@ if [ "$WORLD" != "default" ]; then
     cp -u "$WORLD_SRC" "$WORLD_DST"
     echo "[sim] 已安装世界文件 -> $WORLD_DST"
 
-    # 场地模型（model://rmuc_2025 等）直接由工作空间目录提供：
+    # 场地模型（model://rmuc_2027 / rmuc_2025 等）直接由工作空间目录提供：
     # GZ_SIM_RESOURCE_PATH 把它放在最前，Gazebo 无论什么情况都加载
-    # worlds/models/rmuc_2025/meshes/rmuc_2025.stl 这一份；
+    # worlds/models/<模型名>/meshes/<模型名>.stl 这一份；
     # 不再复制进 PX4 models 目录（副本会过期，曾导致换网格后仍显示旧版）
     if [ -d "$WS_DIR/worlds/models" ]; then
         # git clone 的工作空间不含 STL 二进制（zip 发行包已内含），缺失时自动拉取
+        # （自动下载仅支持 rmuc_2025；rmuc_2027 网格随 zip 发行或见 README 手动获取）
         if [ ! -s "$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl" ] \
             && [ "$WORLD" = "rmuc_2025_field" ]; then
             echo "[sim] 场地网格缺失，尝试自动下载（需联网）..."
             bash "$WS_DIR/scripts/fetch_field_model.sh" || \
                 echo "[sim] 警告：场地网格下载失败，Gazebo 中将缺少场地模型"
         fi
+        if [ "$WORLD" = "rmuc_2027_field" ] \
+            && [ ! -s "$WS_DIR/worlds/models/rmuc_2027/meshes/rmuc_2027.stl" ]; then
+            echo "[sim] 警告：缺少 worlds/models/rmuc_2027/meshes/rmuc_2027.stl"
+            echo "[sim]       请使用 zip 发行包，或按 README「场地网格」一节获取该文件"
+        fi
         # 删除旧版本脚本复制进 PX4 目录的场地模型副本，杜绝误读旧网格
-        if [ -d "$PX4_DIR/Tools/simulation/gz/models/rmuc_2025" ]; then
-            rm -rf "$PX4_DIR/Tools/simulation/gz/models/rmuc_2025"
-            echo "[sim] 已删除 PX4 models 目录下的旧场地模型副本（统一使用工作空间副本）"
-        fi
+        for stale in rmuc_2025 rmuc_2027; do
+            if [ -d "$PX4_DIR/Tools/simulation/gz/models/$stale" ]; then
+                rm -rf "$PX4_DIR/Tools/simulation/gz/models/$stale"
+                echo "[sim] 已删除 PX4 models 目录下的旧场地模型副本：$stale（统一使用工作空间副本）"
+            fi
+        done
         export GZ_SIM_RESOURCE_PATH="$WS_DIR/worlds/models:${GZ_SIM_RESOURCE_PATH:-}"
-        STL_SRC="$WS_DIR/worlds/models/rmuc_2025/meshes/rmuc_2025.stl"
-        if [ -f "$STL_SRC" ]; then
-            echo "[sim] 场地模型直接加载：$STL_SRC"
-            echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)"
-            echo "[sim]   参考值：fa41fd76e66492d8c87762355f461977（削墙+清理退化三角形版，推荐）"
-            echo "[sim]           bf4ab3fc2320af8cff00e6c52be3409d（旧削墙版，含 402 个退化三角形）"
+        # 按当前世界打印实际加载的场地网格及 md5（便于核对是否用错版本）
+        case "$WORLD" in
+            rmuc_2027_field) FIELD_MODEL=rmuc_2027 ;;
+            rmuc_2025_field) FIELD_MODEL=rmuc_2025 ;;
+            *)               FIELD_MODEL="" ;;
+        esac
+        if [ -n "$FIELD_MODEL" ]; then
+            STL_SRC="$WS_DIR/worlds/models/$FIELD_MODEL/meshes/$FIELD_MODEL.stl"
+            if [ -f "$STL_SRC" ]; then
+                echo "[sim] 场地模型直接加载：$STL_SRC"
+                echo "[sim] 场地网格 md5: $(md5sum "$STL_SRC" | cut -d' ' -f1)"
+                echo "[sim]   参考值：378561b1312fb76ac23e3c55f91b2631（rmuc_2027：wall3m+中央推平+机库地板，推荐）"
+                echo "[sim]           19079837e87223fcc745de9620966053（rmuc_2025 wall3m 单面版，已验证可用）"
+                echo "[sim]           bf4ab3fc2320af8cff00e6c52be3409d（旧削墙双面版，含 402 个退化三角形，勿用）"
+            fi
         fi
-        # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用）
-        if [ ! -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ]; then
-            python3 "$WS_DIR/tools/rasterize_field.py" || \
+        # 离线占据栅格缺失时一并重建（供 goal_planner 的 A* 使用；
+        # 仅 rmuc_2025 支持自动重建，rmuc_2027 栅格随工作空间发布）
+        if [ "$WORLD" = "rmuc_2025_field" ] \
+            && [ ! -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ]; then
+            python3 "$WS_DIR/tools/rasterize_field.py" rmuc_2025 || \
                 echo "[sim] 警告：占据栅格重建失败，A* 将回退到内置解析障碍"
         fi
-        # 若工作空间已编译，同步一份进 install 目录（goal_planner 从
-        # share 目录读图；不重新 colcon build 也能生效）
+        # 若工作空间已编译，把所有占据栅格同步进 install 目录
+        # （goal_planner 从 share 目录读图；不重新 colcon build 也能生效）
         INSTALL_MAPS="$WS_DIR/install/uav_planning/share/uav_planning/maps"
-        if [ -s "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" ] \
-            && [ -d "$WS_DIR/install/uav_planning/share/uav_planning" ]; then
+        if [ -d "$WS_DIR/install/uav_planning/share/uav_planning" ]; then
             mkdir -p "$INSTALL_MAPS"
-            cp -u "$WS_DIR/src/uav_planning/maps/rmuc_2025_occ.npz" "$INSTALL_MAPS/" 2>/dev/null || true
+            for npz in "$WS_DIR"/src/uav_planning/maps/*.npz; do
+                [ -e "$npz" ] || continue
+                cp -u "$npz" "$INSTALL_MAPS/" 2>/dev/null || true
+            done
         fi
     fi
 fi
