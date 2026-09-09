@@ -64,11 +64,16 @@ def _setup(context, *args, **kwargs):
             name='openvins',
             namespace=ns,
             output='screen',
+            # 注意：不要在这里传 topic_imu / topic_camera0 / topic_camera1！
+            # open_vins 上游 ROS2Visualizer::setup_subscribers 会自行
+            # declare_parameter 这三个参数，而节点又开了
+            # automatically_declare_parameters_from_overrides，
+            # 从 params 文件传入会触发 ParameterAlreadyDeclaredException。
+            # 实际话题由 kalibr_imu_chain / kalibr_imucam_chain 的
+            # rostopic 字段决定（parse_external 覆盖），与上方桥接
+            # remappings 严格对应。
             parameters=[{
                 'config_path': config,
-                'topic_imu': f'/{ns}/imu0',
-                'topic_camera0': f'/{ns}/cam0/image_raw',
-                'topic_camera1': f'/{ns}/cam1/image_raw',
                 'publish_global_to_imu_tf': True,
                 'publish_calibration_tf': True,
             }],
