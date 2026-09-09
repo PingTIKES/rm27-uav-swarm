@@ -1,6 +1,6 @@
 """
 RViz 打点导航节点：订阅 RViz "2D Nav Goal" 工具发布的 /goal_pose，
-在 RM2027 赛场占据栅格上跑 A* + 视线拉直，把路径拆成航点序列
+在 RM2025 赛场占据栅格上跑 A* + 视线拉直，把路径拆成航点序列
 依次下发给指定无人机的 offboard 节点（/uavN/waypoint）。
 
 话题：
@@ -72,12 +72,12 @@ class GoalPlanner(Node):
 
         map_file = str(self.get_parameter('map_file').value)
         if not map_file:
-            # 默认：包内离线栅格（RMUC2027 场地光栅化产物，中央已推平含机库）
+            # 默认：包内离线栅格（RMUC2025 真实场地光栅化产物）
             try:
                 from ament_index_python.packages import get_package_share_directory
                 map_file = os.path.join(
                     get_package_share_directory('uav_planning'),
-                    'maps', 'rmuc_2027_occ.npz')
+                    'maps', 'rmuc_2025_occ.npz')
             except Exception:  # noqa: BLE001
                 map_file = ''
         self.fmap = FieldMap(

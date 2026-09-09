@@ -1,12 +1,11 @@
 """
-RM2027 赛场占据栅格地图 + A* 路径搜索（公共系 NED 坐标）。
+RM2025 赛场占据栅格地图 + A* 路径搜索（公共系 NED 坐标）。
 
 地图来源（二选一）：
-  1. map_file 指向离线栅格（.npz）——由 RMUC2027 场地网格
-     （worlds/models/rmuc_2027：2025 网格推平中央结构 + 战场中央机库）
+  1. map_file 指向离线栅格（.npz）——由 RMUC2025 真实场地网格
+     （worlds/models/rmuc_2025，源自 SMBU-PolarBear rmu_gazebo_simulator）
      离线光栅化生成：取 z∈[0.35, 3.8] m 的所有三角面采样投影到 NED 平面，
-     并按机体半径膨胀 0.5 m。对应 worlds/rmuc_2027_field.sdf（默认场地）。
-     机库平台顶 0.24 m 低于高度带下限，不在栅格中（可飞越、可降落）。
+     并按机体半径膨胀 0.5 m。对应 worlds/rmuc_2025_field.sdf（默认场地）。
   2. 内置解析障碍清单 OBSTACLES——与简化场地 worlds/rm2025_field.sdf
      一一对应（map_file 为空或文件缺失时的回退）。
 
@@ -63,8 +62,7 @@ class FieldMap:
         """加载 .npz 离线栅格：occ(nx,ny) uint8（已含膨胀）、x0/y0/res。
 
         栅格在 NED 系下生成：x_ned = mesh_x，y_ned = -mesh_y，
-        与 worlds/rmuc_2027_field.sdf（及 rmuc_2025_field.sdf）中
-        场地 yaw=+90° 的放置一致。
+        与 worlds/rmuc_2025_field.sdf 中场地 yaw=+90° 的放置一致。
         """
         import numpy as np
         data = np.load(path)
