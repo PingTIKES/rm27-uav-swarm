@@ -36,13 +36,18 @@ feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
 
 # zero velocity update parameters we can use
 # we support either IMU-based or disparity detection.
-# 停机坪静置时打开可抑制零漂；初始化完成后用处不大，默认关
-try_zupt: false
-zupt_chi2_multipler: 0 # set to 0 for only disp-based
+# 必须开启：上游逻辑 wait_for_jerk = (updaterZUPT == nullptr)，
+# 即 try_zupt: false 时静止初始化会"等待加速度 jerk"（静止→动起来
+# 的瞬间才初始化），纯静置永远报 "failed static init: no accel jerk
+# detected"。打开 ZUPT 后静置即立即初始化。
+# zupt_only_at_beginning: true 使 ZUPT 只在初始化前后生效，
+# 起飞/悬停后自动禁用，不影响飞行中的估计。
+try_zupt: true
+zupt_chi2_multipler: 0 # set to 0 for only disp-based（纯视差判定，停机坪上最稳）
 zupt_max_velocity: 0.1
 zupt_noise_multiplier: 10
-zupt_max_disparity: 0.5 # set to 0 for only imu-based
-zupt_only_at_beginning: false
+zupt_max_disparity: 1.0 # 静置时视差 ~0.01px，1.0 足够宽松且不会误判飞行
+zupt_only_at_beginning: true
 
 # ==================================================================
 # 初始化：静止初始化（默认）。起飞前让飞机在停机坪静置约 3 秒，
