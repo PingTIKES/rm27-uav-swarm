@@ -307,7 +307,7 @@ for i in $(seq 1 "$NUM_UAVS"); do
 done
 
 sleep 5
-echo "[sim] 启动 MicroXRCEAgent（udp4:8888，自动接管全部实例）"
+echo "[sim] 启动 MicroXRCEAgent（udp4:8888，自动接入全部实例）"
 MicroXRCEAgent udp4 -p 8888 &
 PIDS+=($!)
 
