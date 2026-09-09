@@ -119,7 +119,7 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
   同时发布 `/field_map` 占据栅格、`/planned_path` 路径、`/goal_marker` 目标标记
 - `pose_tf_publisher.py`：**位姿→TF+标记桥**。把 4 机的 PX4 本地 NED 位置换算到
   公共系，广播 `map->uavN` TF 并发布机身/机头/机号标记供 RViz 显示
-- `collision_monitor.py`：**集群级防碰兜底**。10 Hz 两两计算机间 3D 距离：
+- `collision_monitor.py`：**集群级防碰兑底**。10 Hz 两两计算机间 3D 距离：
 <1.5 m 发告警到 `/swarm/collision_warning`；<0.8 m 直接沿连线反向把两机各拉开 1 m
 （2 秒冷却，避免与调度器抢航点）。仿真靠高度分层基本不触发，实机是安全底线
 - `vfh_planner.py`：VFH+ 避障**模板**（实机接双目深度点云用），当前实现为
@@ -354,6 +354,20 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
   存在一份双层重叠版（每个三角形被完整复制一份、22.6 万面，md5
   `fa41fd76...`），会导致接触冲量与渲染负载翻倍，已备份为
   `rmuc_2025_doubled_backup.stl` 留档，**不要再换回去**
+- **odomimu 有话题但一条消息都没有（hz 静默）/ OpenVINS 突然不刷日志**：
+  仿真重启过而桥接没跟着重启。`start_sim_4uav.sh` 每轮生成新的
+  `GZ_PARTITION`，终端 B 的旧桥接还连着已死的分区被无声饿死。
+  **铁律：仿真每次重启，`run_openvins_sim.sh` 必须跟着重启**
+  （它会自动 source `/tmp/rm27_gz_env.sh` 里的新分区）。同理，
+  `ros2 topic list` 里整个 `/px4_*` 消失 = MicroXRCEAgent 没在跑
+  （它随仿真脚本自动拉起，仿真重启即恢复）
+- **OpenVINS 启动即死 `ParameterAlreadyDeclaredException: topic_imu`**：
+  上游 ROS2Visualizer 会自行声明 topic_imu / topic_camera0/1，
+  launch 里不得再传同名参数（当前 launch 已移除，勿加回）
+- **一直刷 `failed static init: no accel jerk detected`**：配置里
+  `try_zupt: false` 导致静止初始化必须等"静止→运动"的 jerk 才触发。
+  当前配置已开 ZUPT（仅初始化阶段生效），静置 2 秒即完成初始化；
+  若把 try_zupt 关回 false，就得静置后直接起飞，在动起来瞬间初始化
 - 桥接报 `Unable to find topic` / 终端 B 一直等相机：仿真是普通模式起的
   （没加 `VIO_UAV=1`），或终端 B 与仿真不在同一 `GZ_PARTITION`
   （`run_openvins_sim.sh` 会自动 source `/tmp/rm27_gz_env.sh`，手动调试时别忘了）
