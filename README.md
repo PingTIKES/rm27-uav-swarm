@@ -119,7 +119,7 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
   同时发布 `/field_map` 占据栅格、`/planned_path` 路径、`/goal_marker` 目标标记
 - `pose_tf_publisher.py`：**位姿→TF+标记桥**。把 4 机的 PX4 本地 NED 位置换算到
   公共系，广播 `map->uavN` TF 并发布机身/机头/机号标记供 RViz 显示
-- `collision_monitor.py`：**集群级防碰兑底**。10 Hz 两两计算机间 3D 距离：
+- `collision_monitor.py`：**集群级防碰兜底**。10 Hz 两两计算机间 3D 距离：
 <1.5 m 发告警到 `/swarm/collision_warning`；<0.8 m 直接沿连线反向把两机各拉开 1 m
 （2 秒冷却，避免与调度器抢航点）。仿真靠高度分层基本不触发，实机是安全底线
 - `vfh_planner.py`：VFH+ 避障**模板**（实机接双目深度点云用），当前实现为
