@@ -270,7 +270,8 @@ ros2 launch uav_bringup goal_nav.launch.py uav_id:=3    # 打点控制 3 号机
 
 启动后 4 机照常自动起飞到分层高度悬停，同时弹出 RViz：
 灰色的是赛场占据栅格地图（基地/资源岛/前哨站/高地），彩色方块是 4 架无人机。
-用顶部工具栏的 **"2D Nav Goal"** 在地图上按住拖出目标点（和朝向，朝向目前不用），
+用顶部工具栏的 **"2D Nav Goal"** 在地图上按住拖出目标点（和朝向，
+朝向目前不用），
 `goal_planner` 会在占据栅格上跑 A* 并拉直平滑（绿色线为规划路径），
 被控无人机沿路径逐航点飞过去，其余机原地悬停。
 
@@ -334,11 +335,30 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
 
 **排错**：
 
+- **带双目那架无人机直接消失、GUI 里查无此机**：模型 spawn 被 gz-server
+  拒绝，按顺序查：
+  1. `tail -n 50 /tmp/gz_server.log` 找 `[Err]` 行——最常见的是
+     `Camera sensor <image><format> has invalid value of L8_INT8`：
+     gz-sim 相机灰度格式的合法名是 **`L_INT8`**（不是 `L8_INT8`），
+     非法格式会让服务器拒绝整个模型 spawn（Error Code 9，其余机不受影响）；
+     修复：`sed -i 's/L8_INT8/L_INT8/g' worlds/models/stereo_cam/model.sdf`
+  2. 若没有格式错误，检查 merge 命名：被 `<include merge='true'>` 拍平进
+     x500 的子模型，link 名必须带模型名前缀（`stereo_cam/base_link`，与
+     PX4 官方 OakD-Lite 相同写法）；只叫 `base_link` 会与机体重名，
+     整个模型加载失败
+  3. 确认模型到底生成没有：`source /tmp/rm27_gz_env.sh` 后再
+     `gz model --list`（每轮仿真 `GZ_PARTITION` 都不同，不 source 会报
+     `Service call to [/gazebo/worlds] timed out`——这不是仿真挂了）
+- **场地网格必须是单层版本**：`worlds/models/rmuc_2025/meshes/rmuc_2025.stl`
+  应为单层 3m 墙版（md5 `19079837e87223fcc745de9620966053`）。历史上
+  存在一份双层重叠版（每个三角形被完整复制一份、22.6 万面，md5
+  `fa41fd76...`），会导致接触冲量与渲染负载翻倍，已备份为
+  `rmuc_2025_doubled_backup.stl` 留档，**不要再换回去**
 - 桥接报 `Unable to find topic` / 终端 B 一直等相机：仿真是普通模式起的
   （没加 `VIO_UAV=1`），或终端 B 与仿真不在同一 `GZ_PARTITION`
   （`run_openvins_sim.sh` 会自动 source `/tmp/rm27_gz_env.sh`，手动调试时别忘了）
 - OpenVINS 终端刷 `cv_bridge exception`：相机像素格式不匹配，stereo_cam
-  用的是 `L8_INT8`（桥接后为 mono8），改过相机格式的话同步改回
+  用的是 `L_INT8`（桥接后为 mono8），改过相机格式的话同步改回
 - 一直不初始化：飞机没静置/图像全黑（GUI 里 Topic Visualization 选
   `/vio_cam0/image` 检查画面）；场地纹理少属于正常，CLAHE 已开
 - 轨迹飘得离谱：先核对 `kalibr_imucam_chain.yaml` 的 `T_imu_cam` 是否与
@@ -347,6 +367,9 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
 ## 4. 运行中调试命令
 
 ```bash
+source /tmp/rm27_gz_env.sh   # 用 gz CLI 前必做：加载本轮仿真分区（每轮重启都会变）
+gz model --list              # 已生成的模型列表
+gz model -m x500_2 -p        # 某架机的位姿
 ros2 topic echo /swarm/state                               # 集群当前阶段
 ros2 topic echo /uav2/state                                # 2 号机状态机
 ros2 topic echo /swarm/collision_warning                   # 防碰告警
@@ -371,7 +394,7 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 | 第二次启动 Gazebo 空白/没有场地 | 上一次仿真没退干净（除 gz-sim 后端外，官方确认 `gz sim -g` 的 ruby 启动器/GUI 也会残留），新旧 server 同时在线导致服务发现串台：start_sim_4uav.sh 启动前按 `gz[- ]sim` 统一匹配强清理，且每轮仿真用唯一 GZ_PARTITION 隔离（残留杀不净也不串台）；手动清理用 `./scripts/stop_sim.sh` 或 `pkill -9 -f "gz[- ]sim"`；仍空白请带上 /tmp/gz_server.log 与 /tmp/gz_gui.log 排查 |
 | 改了 params.yaml 没生效 | launch 读的是 install 下的副本：重新 `colcon build` 并 `source install/setup.bash` |
 | Gazebo 打开的是空场地而非赛场 | 世界文件没装上：确认终端 A 有「已安装世界文件」输出；否则手动 `cp worlds/rmuc_2025_field.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/`（PX4 的 Tools/simulation/gz 子模块必须已拉取） |
-| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：确认 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 存在（缺失时脚本会自动下载）；Gazebo 直接加载工作空间这份文件，启动日志会打印其 md5（削墙版应为 bf4ab3fc2320af8cff00e6c52be3409d），更换网格后无需任何同步操作 |
+| 场地模型缺失（世界只有几个停机坪/目标柱） | 场地网格没装上：确认 `worlds/models/rmuc_2025/meshes/rmuc_2025.stl` 存在（缺失时脚本会自动下载）；Gazebo 直接加载工作空间这份文件，启动日志会打印其 md5（单层 3m 墙版应为 19079837e87223fcc745de9620966053），更换网格后无需任何同步操作 |
 | 飞机出生点与世界对不上（穿模/悬空） | 出生点三处配置不同步：start_sim_4uav.sh 的 SPAWN_POSES、params.yaml 的 spawn_offsets、launch 的 SPAWN_OFFSETS_NED 必须一致（注意 NED=(enu_y, enu_x)） |
 | 某机不跟航点 | 确认航点发到了该机的命名空间 `/uavN/waypoint`，且坐标是该机**本地系**（公共系坐标需减出生点偏移） |
 | RViz 打开后看不到地图/无人机 | 确认是 `goal_nav.launch.py` 启动的（它才发 `/field_map` 和 `/uav_markers`）；Fixed Frame 必须是 `map`；地图话题 QoS 需 Reliable+Transient Local（rm2025.rviz 已配好） |
