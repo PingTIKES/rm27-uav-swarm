@@ -13,6 +13,10 @@
     <link name="OakD-Lite/base_link"> 一致）。若只叫 base_link，
     merge 进 x500 后会与机体的 base_link 重名，整个模型加载失败。
 
+  像素格式注意：gz-sim 相机合法格式名为 L_INT8（8bit 灰度），
+  不是 L8_INT8。非法格式名会导致相机创建失败，在 Garden/ogre2
+  下可能直接使 gz-server 断言崩溃。
+
   安装关系（与 config/openvins_sim/kalibr_imucam_chain.yaml 严格对应）：
     - 相机挂点 = x500 base_link 系 (0.17, 0, -0.06)（机头前下方，
       避开旋翼视野与底板遮挡）
@@ -55,7 +59,7 @@
           <image>
             <width>640</width>
             <height>480</height>
-            <format>L8_INT8</format>
+            <format>L_INT8</format>
           </image>
           <clip>
             <near>0.05</near>
@@ -80,7 +84,7 @@
           <image>
             <width>640</width>
             <height>480</height>
-            <format>L8_INT8</format>
+            <format>L_INT8</format>
           </image>
           <clip>
             <near>0.05</near>
