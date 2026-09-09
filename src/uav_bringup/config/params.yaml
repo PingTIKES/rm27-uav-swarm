@@ -1,8 +1,7 @@
 # 集群全局参数（sim_swarm.launch.py 引用）
 # 坐标说明：公共系 NED（x 北 = Gazebo ENU 的 y，y 东 = ENU 的 x）。
-# RM2027 赛场（worlds/rmuc_2027_field.sdf）：场地约 28(南北) x 15(东西) m，
-# 蓝方基地在北端 x=+13，红方基地在南端 x=-13，蓝方基地启动区中心 (10.5, 0)；
-# 战场中央为双方机库（蓝 NED (0.9, 0)、红 NED (-0.9, 0)，平台顶 0.24 m 可飞越）。
+# RM2025 赛场（worlds/rm2025_field.sdf）：场地约 28(南北) x 15(东西) m，
+# 蓝方基地在北端 x=+13，红方基地在南端 x=-13，蓝方基地启动区中心 (10.5, 0)。
 
 swarm_coordinator:
   ros__parameters:
@@ -18,11 +17,9 @@ swarm_coordinator:
     alt_layer: 0.5                # 相邻机高度层差 m
     converge_time: 15.0           # 目标上空盘旋时间 s
     wp_timeout: 30.0
-    # 避障地图：空 = 自动用 uav_planning 安装的 rmuc_2027_occ.npz
-    # （RMUC2027 场地网格按 0.35~3.8 m 高度带光栅化，已膨胀 0.5 m；
-    # 机库平台顶 0.24 m 低于占据带下限，不在栅格中、可正常飞越）；
+    # 避障地图：空 = 自动用 uav_planning 安装的 rmuc_2025_occ.npz
+    # （RMUC2025 真实场地网格按 0.35~3.8 m 高度带光栅化，已膨胀 0.5 m）；
     # 文件缺失时回退到简化场地的内置解析障碍；
-    # 用 2025 场地（PX4_WORLD=rmuc_2025_field）时改为 rmuc_2025_occ.npz，
     # 用简化场地（PX4_WORLD=rm2025_field）时设为 'builtin' 强制内置障碍，
     # 否则会误用真实场地的栅格
     map_file: ''

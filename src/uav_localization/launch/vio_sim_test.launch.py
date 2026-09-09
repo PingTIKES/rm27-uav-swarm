@@ -81,7 +81,7 @@ def generate_launch_description():
         get_package_share_directory('uav_localization'),
         'config', 'openvins_sim', 'estimator_config.yaml')
     return LaunchDescription([
-        DeclareLaunchArgument('world', default_value='rmuc_2027_field',
+        DeclareLaunchArgument('world', default_value='rmuc_2025_field',
                               description='Gazebo 世界名'),
         DeclareLaunchArgument('vio_model', default_value='x500_stereo_1',
                               description='世界中带双目的模型实例名'),
