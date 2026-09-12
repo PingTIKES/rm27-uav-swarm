@@ -113,7 +113,7 @@ WAIT_TAKEOFF → SEARCH → CONVERGE → RETURN → LAND → DONE
   （`worlds/models/rmuc_2025`，源自 SMBU-PolarBear rmu_gazebo_simulator）
   按 z∈[0.35, 3.8] m 光栅化并膨胀 0.5 m 生成；文件缺失时回退到与简化场地
   `worlds/rm2025_field.sdf` 对应的内置解析障碍。8 连通 A* + 视线拉直平滑。
-  实机演进时接口不变，障碍来源换成 D430i 深度点云局部建图即可
+  实机演进时接口不变，障碍来源换成 D435i 深度点云局部建图即可
 - `goal_planner.py`：**RViz 打点导航**。订阅 RViz "2D Nav Goal" 的 `/goal_pose`，
   A* 规划后把路径拆成航点序列依次下发给指定无人机的 offboard 节点；
   同时发布 `/field_map` 占据栅格、`/planned_path` 路径、`/goal_marker` 目标标记
@@ -279,13 +279,13 @@ ros2 launch uav_bringup goal_nav.launch.py uav_id:=3    # 打点控制 3 号机
 - 打在了障碍上：自动吸附到最近空闲点并打印警告
 - **不要与 `run_swarm.sh` 同时跑**——两者都会给 `/uavN/waypoint` 发航点会互抢
 - 调地图：`src/uav_planning/uav_planning/field_map.py`（分辨率/膨胀/障碍清单）
-- 实机演进：把 field_map 的障碍来源换成 D430i 深度点云局部建图，
+- 实机演进：把 field_map 的障碍来源换成 D435i 深度点云局部建图，
   goal_planner 的接口（/goal_pose 进、/uavN/waypoint 出）完全不用动
 
 ### 附加玩法：OpenVINS 双目 VIO 仿真测试
 
 在仿真里跑通"双目图像 + IMU → OpenVINS → 里程计 → 与真值对比"的完整链路，
-为实机 D430i 无 GPS 定位做参数预演。原理与输入输出见第 2.7 节。
+为实机 D435i 无 GPS 定位做参数预演。原理与输入输出见第 2.7 节。
 
 **一次性安装**（只做一次）：
 
@@ -319,7 +319,9 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
 ```
 
 **操作顺序**：仿真加载完成后先让 1 号机在停机坪**静置约 3 秒**，
-终端 B 出现 `Initialized` 再起飞（静止初始化）；之后正常打点或集群飞行，
+终端 B 刷出 `[ZUPT]: accepted` 即静止初始化完成，**此时应直接起飞**——
+上游在静止状态下不发布 odomimu/TF（见下方排错），评估脚本静止时显示
+"等待数据"属正常，飞机一动数据即来；之后正常打点或集群飞行，
 终端 C 每 5 秒报告一次水平/3D RMSE 与漂移百分比。RViz 可加
 `/uav1/trackhist`（特征跟踪图）与 `/uav1/points_msckf`（三角化特征点云）。
 
@@ -327,8 +329,8 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
 
 | 内容 | 文件 |
 |---|---|
-| 双目传感器（640×480@30 灰度、基线 50mm、hfov 87°、挂点 base_link (0.17,0,-0.06)） | `worlds/models/stereo_cam/model.sdf` |
-| x500 双目变体（merge x500 + 挂 stereo_cam） | `worlds/models/x500_stereo/model.sdf` |
+| D435i 五合一传感器（双目红外 640×480@30 基线 50mm hfov 87° + RGB 1280×720@30 hfov 69° + 深度 640×480@15 0.1~10m + IMU 200Hz，挂点 base_link (0.17,0,-0.06)） | `worlds/models/d435i/model.sdf` |
+| x500 双目变体（merge x500 + 挂 d435i） | `worlds/models/x500_stereo/model.sdf` |
 | OpenVINS 估计器参数（特征 150、max_clones 11、静止初始化等） | `src/uav_localization/config/openvins_sim/estimator_config.yaml` |
 | IMU 噪声（由 x500_base 的 SDF 噪声换算） | `.../openvins_sim/kalibr_imu_chain.yaml` |
 | 相机内外参（fx=fy=337.22、T_imu_cam 与挂点严格对应） | `.../openvins_sim/kalibr_imucam_chain.yaml` |
@@ -341,9 +343,9 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
      `Camera sensor <image><format> has invalid value of L8_INT8`：
      gz-sim 相机灰度格式的合法名是 **`L_INT8`**（不是 `L8_INT8`），
      非法格式会让服务器拒绝整个模型 spawn（Error Code 9，其余机不受影响）；
-     修复：`sed -i 's/L8_INT8/L_INT8/g' worlds/models/stereo_cam/model.sdf`
+     修复：`sed -i 's/L8_INT8/L_INT8/g' worlds/models/d435i/model.sdf`
   2. 若没有格式错误，检查 merge 命名：被 `<include merge='true'>` 拍平进
-     x500 的子模型，link 名必须带模型名前缀（`stereo_cam/base_link`，与
+     x500 的子模型，link 名必须带模型名前缀（`d435i/base_link`，与
      PX4 官方 OakD-Lite 相同写法）；只叫 `base_link` 会与机体重名，
      整个模型加载失败
   3. 确认模型到底生成没有：`source /tmp/rm27_gz_env.sh` 后再
@@ -368,15 +370,26 @@ ros2 run uav_localization compare_vio_gt.py --ros-args -p uav_id:=1
   `try_zupt: false` 导致静止初始化必须等"静止→运动"的 jerk 才触发。
   当前配置已开 ZUPT（仅初始化阶段生效），静置 2 秒即完成初始化；
   若把 try_zupt 关回 false，就得静置后直接起飞，在动起来瞬间初始化
+- **ZUPT 刷屏但 odomimu / TF 始终不发布**（hz 静默、tf2_echo 无输出）：
+  不是卡死，是上游逻辑——静止时每帧 ZUPT 成功后 track_image_and_update
+  提前 return，do_feature_propagate_update 不执行，timelastupdate 恒为 -1，
+  initialized() 恒 false，odomimu 与 global→imu TF 被发布门全部锁死。
+  **飞机一动（ZUPT 被拒一次）即恢复发布**，所以看到 ZUPT 刷屏就该直接起飞，
+  别静置等数据。想静止时也发布：把上游 VioManager.h 的
+  `initialized()` 改为只判 `is_initialized_vio` 后重新编译 ov_msckf
+- **评估脚本永远"等待数据"但两路话题 hz 都有频率**：QoS 不兼容静默丢数据。
+  compare_vio_gt.py 订阅 PX4 话题必须 BEST_EFFORT + **VOLATILE**
+  （MicroXRCEAgent 发布是 VOLATILE；订阅请求 TRANSIENT_LOCAL 会被 DDS
+  判不兼容，一条都收不到且无报错）。当前脚本已修复，勿改回
 - 桥接报 `Unable to find topic` / 终端 B 一直等相机：仿真是普通模式起的
   （没加 `VIO_UAV=1`），或终端 B 与仿真不在同一 `GZ_PARTITION`
   （`run_openvins_sim.sh` 会自动 source `/tmp/rm27_gz_env.sh`，手动调试时别忘了）
-- OpenVINS 终端刷 `cv_bridge exception`：相机像素格式不匹配，stereo_cam
+- OpenVINS 终端刷 `cv_bridge exception`：相机像素格式不匹配，d435i
   用的是 `L_INT8`（桥接后为 mono8），改过相机格式的话同步改回
 - 一直不初始化：飞机没静置/图像全黑（GUI 里 Topic Visualization 选
   `/vio_cam0/image` 检查画面）；场地纹理少属于正常，CLAHE 已开
 - 轨迹飘得离谱：先核对 `kalibr_imucam_chain.yaml` 的 `T_imu_cam` 是否与
-  stereo_cam/model.sdf 的挂点一致（两处必须同步改）
+  d435i/model.sdf 的挂点一致（两处必须同步改）
 
 ## 4. 运行中调试命令
 
@@ -428,11 +441,11 @@ ros2 topic pub /uav3/command std_msgs/msg/String "{data: 'land'}" -1
 
 - [ ] `setup_env.sh` 在 RK3566 上只执行第 1、4、6 步（**不要**装 Gazebo/PX4 SITL）
 - [ ] 飞控串口 ↔ uXRCE-DDS Agent：`MicroXRCEAgent serial --dev /dev/ttyS1 -b 921600`
-- [ ] 安装 D430i 驱动：`sudo apt install ros-humble-realsense2-camera`，启动命令见
+- [ ] 安装 D435i 驱动：`sudo apt install ros-humble-realsense2-camera`，启动命令见
 `uav_localization/config/openvins_params.yaml` 头部注释（VIO 模式关深度流）
 - [ ] 启动 OpenVINS：`ros2 launch uav_localization openvins.launch.py`，
 输出 `/uavN/odom` 转 `vehicle_visual_odometry` 喂给 EKF2（`EKF2_EV_CTRL=15`）
 - [ ] 用 `yolo_detector.py` 替换 `sim_target_detector.py`（加载 `models/yolov5s.rknn`；
-**D430i 无 RGB，检测用左红外灰度图**）
+**D435i 自带 RGB，检测用彩色图 `/camera/camera/color/image_raw`（也可退回左红外灰度）**）
 - [ ] 集群通信改用 WiFi + CycloneDDS
 - [ ] 实机首飞用 `uav_bringup.launch.py`（`auto_takeoff:=False`，遥控器接管验证后再放开）
