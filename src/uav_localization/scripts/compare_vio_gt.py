@@ -31,9 +31,12 @@ from px4_msgs.msg import VehicleLocalPosition
 
 
 def px4_qos() -> QoSProfile:
+    # 订阅侧 QoS 不得比发布侧更严格：MicroXRCEAgent 发布为
+    # BEST_EFFORT + VOLATILE，若订阅请求 TRANSIENT_LOCAL 会因 QoS
+    # 不兼容而静默收不到任何消息（现象：话题在、hz 有频率、脚本无数据）
     return QoSProfile(
         reliability=QoSReliabilityPolicy.BEST_EFFORT,
-        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        durability=QoSDurabilityPolicy.VOLATILE,
         history=QoSHistoryPolicy.KEEP_LAST,
         depth=1,
     )
@@ -123,7 +126,9 @@ class VioEval(Node):
     def _report(self):
         v, r = self._pairs()
         if v is None:
-            self.get_logger().info('等待数据（检查 /uavN/odomimu 是否在发布）...')
+            self.get_logger().info(
+                f'等待数据：VIO 已收 {len(self.vio)} 条，真值已收 '
+                f'{len(self.ref)} 条（哪边是 0 就查哪边）...')
             return
         if self.aligned is None:
             self._align(v, r)
