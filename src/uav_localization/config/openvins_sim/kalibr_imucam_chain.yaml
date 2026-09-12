@@ -1,7 +1,8 @@
 %YAML:1.0
 
 # ============================================================================
-# 相机配置（仿真）：x500_stereo 前置双目，与 worlds/models/stereo_cam 严格对应
+# 相机配置（仿真）：x500_stereo 前置 RealSense D435i 双目红外，
+# 与 worlds/models/d435i 严格对应
 #
 # 几何关系：
 #   IMU 系 = x500 base_link（x 前 / y 左 / z 上）
