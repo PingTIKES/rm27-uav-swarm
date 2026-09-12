@@ -1,5 +1,5 @@
-# OpenVINS 参数（实机 RK3566 + Intel RealSense D430i，按框架文档第 7 节优化）
-# D430i：双目红外全局快门 + 内置 BMI055 IMU + D4 硬算深度
+# OpenVINS 参数（实机 RK3566 + Intel RealSense D435i，按框架文档第 7 节优化）
+# D435i：双目红外全局快门 + RGB + 内置 BMI055 IMU + D4 硬算深度
 # 话题来自 realsense-ros（见下方启动命令），出厂已标定内参，建议 Kalibr 精调
 #
 # realsense-ros 启动（VIO 模式，关深度流省 USB 带宽）：
@@ -8,10 +8,14 @@
 #       depth_module.profile:=640x480x30 \
 #       enable_gyro:=true enable_accel:=true unite_imu_method:=2 \
 #       gyro_fps:=200 accel_fps:=250
+#
+# 注意：鲁班猫 Zero W 只有 USB2.0，D435i 全流（双目+RGB+深度+IMU）
+# 同开会受带宽限制，建议按模式开关流：VIO 飞行时关深度/RGB，
+# 避障测试时开深度（640x480x15），检测测试时开 RGB。
 
 ov_msckf:
   ros__parameters:
-    # ---- 相机（D430i 双目红外，基线 50 mm）----
+    # ---- 相机（D435i 双目红外，基线 50 mm）----
     max_cameras: 2
     cam0_topic: "/camera/camera/infra1/image_rect_raw"   # 左红外
     cam1_topic: "/camera/camera/infra2/image_rect_raw"   # 右红外
@@ -19,14 +23,14 @@ ov_msckf:
     cam1_resolution: [640, 480]
     # 出厂内参可用 rs-enumerate-devices -c 读出后填入；建议 Kalibr 精调
     cam0_intrinsics: [0.0, 0.0, 0.0, 0.0]      # fx fy cx cy
-    cam0_distortion: [0.0, 0.0, 0.0, 0.0]      # D430i 已整流(rect)，畸变≈0
+    cam0_distortion: [0.0, 0.0, 0.0, 0.0]      # D435i 已整流(rect)，畸变≈0
     cam1_intrinsics: [0.0, 0.0, 0.0, 0.0]
     cam1_distortion: [0.0, 0.0, 0.0, 0.0]
     # 相机-IMU 外参 [qx qy qz qw tx ty tz]：出厂标定可读出，Kalibr 更准
     T_cam0_imu: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     T_cam1_imu: [1.0, 0.0, 0.0, 0.0, 0.0, -0.05, 0.0]  # 基线 50mm 初值
 
-    # ---- IMU（D430i 内置 BMI055，gyro 200Hz / accel 250Hz，合并后 ~400Hz）----
+    # ---- IMU（D435i 内置 BMI055，gyro 200Hz / accel 250Hz，合并后 ~400Hz）----
     imu_topic: "/camera/camera/imu"
     imu_rate: 400.0
     # BMI055 典型噪声密度（用 imu_utils/Kalibr 实测后替换）
@@ -55,6 +59,7 @@ ov_msckf:
     path_topic: "/uav1/path"
 
 # 注 1：仿真中不运行 OpenVINS，定位直接用 PX4 EKF2（GPS 融合）。
-# 注 2：D430i 无 RGB，YOLO 检测需用左红外灰度图（/camera/camera/infra1/image_rect_raw）。
+# 注 2：D435i 自带 RGB，YOLO 检测可直接用彩色图（/camera/camera/color/image_raw）；
+#       需要低光/无红外散斑干扰时也可退回左红外灰度图。
 # 注 3：避障用深度时另开一个 realsense 实例或改 enable_depth:=true（D4 硬算，
 #       不占用 RK3566 CPU，比 OpenCV SGBM 软算省资源）。

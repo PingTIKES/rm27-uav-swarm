@@ -5,6 +5,9 @@
       -> /<uav_ns>/imu0          (sensor_msgs/Imu, 250Hz, 与 PX4 同源)
   gz /vio_cam0/image -> /<uav_ns>/cam0/image_raw  (sensor_msgs/Image mono8, 30Hz)
   gz /vio_cam1/image -> /<uav_ns>/cam1/image_raw
+  gz /d435i/color/image_raw -> /<uav_ns>/d435i/color/image_raw  (rgb8, 30Hz, 检测用)
+  gz /d435i/depth/image_raw -> /<uav_ns>/d435i/depth/image_raw  (32FC1 米, 15Hz, 避障用)
+  gz /d435i/imu  -> /<uav_ns>/d435i/imu  (相机内置 IMU 200Hz，备用，OpenVINS 不订阅)
 
 OpenVINS 输出（namespace <uav_ns> 下）：
   odomimu / pathimu / points_msckf / trackhist（特征跟踪可视化图）
@@ -48,11 +51,18 @@ def _setup(context, *args, **kwargs):
             f'{imu_gz}@sensor_msgs/msg/Imu@gz.msgs.IMU',
             '/vio_cam0/image@sensor_msgs/msg/Image@gz.msgs.Image',
             '/vio_cam1/image@sensor_msgs/msg/Image@gz.msgs.Image',
+            # D435i 附加传感器：RGB（检测）、深度（避障）、相机内置 IMU（备用）
+            '/d435i/color/image_raw@sensor_msgs/msg/Image@gz.msgs.Image',
+            '/d435i/depth/image_raw@sensor_msgs/msg/Image@gz.msgs.Image',
+            '/d435i/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
         ],
         remappings=[
             (imu_gz, f'/{ns}/imu0'),
             ('/vio_cam0/image', f'/{ns}/cam0/image_raw'),
             ('/vio_cam1/image', f'/{ns}/cam1/image_raw'),
+            ('/d435i/color/image_raw', f'/{ns}/d435i/color/image_raw'),
+            ('/d435i/depth/image_raw', f'/{ns}/d435i/depth/image_raw'),
+            ('/d435i/imu', f'/{ns}/d435i/imu'),
         ],
     )
     nodes = [bridge]
